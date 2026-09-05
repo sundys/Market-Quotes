@@ -54,10 +54,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// 无实时数据时用静态元数据构造占位行情，保证卡片始终可进详情页。
   static const Map<String, List<String>> _quoteMeta = {
     'gold_cn': ['上海黄金 Au99.99', 'Au99.99', 'CNY'],
-    'gold_global': ['国际黄金', 'XAUUSD=X', 'USD'],
-    'nasdaq100': ['纳斯达克100', '^NDX', 'USD'],
-    'sp500': ['标普500', '^GSPC', 'USD'],
-    'dowjones': ['道琼斯', '^DJI', 'USD'],
+    'gold_global': ['国际黄金期货', 'GC', 'USD'],
+    'nasdaq100': ['纳斯达克100', '100.NDX', 'USD'],
+    'sp500': ['标普500', '100.SPX', 'USD'],
+    'dowjones': ['道琼斯', '100.DJIA', 'USD'],
   };
 
   void _openDetail(String quoteId) {

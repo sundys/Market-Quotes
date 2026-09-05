@@ -185,15 +185,15 @@ class _DetailPageState extends State<DetailPage> {
 
   String _subtitle(MarketQuote q) {
     switch (q.symbol) {
-      case 'GC=F':
+      case 'GC':
         return '国际黄金期货 · COMEX · \$ / 盎司';
       case 'Au99.99':
         return '上海黄金交易所 · ¥ / 克';
-      case '^NDX':
+      case '100.NDX':
         return '纳斯达克100指数';
-      case '^GSPC':
+      case '100.SPX':
         return '标普500指数';
-      case '^DJI':
+      case '100.DJIA':
         return '道琼斯工业指数';
       default:
         return '国际黄金 · XAU/USD · \$ / 盎司';

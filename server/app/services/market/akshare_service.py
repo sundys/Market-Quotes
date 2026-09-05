@@ -127,6 +127,41 @@ def fetch_sge_daily_closes(symbol: str = "Au99.99") -> list:
     return [c for _, c in rows]
 
 
+def fetch_gc_realtime() -> dict:
+    """COMEX 黄金期货实时（新浪外盘，经 AKShare）。含昨日结算价。"""
+    import akshare as ak
+
+    df = ak.futures_foreign_commodity_realtime(symbol="GC")
+    if df is None or df.empty:
+        raise ValueError("GC realtime returned empty")
+    row = df.iloc[0]
+    price = float(row["最新价"])
+    if price <= 0:
+        raise ValueError(f"invalid GC price: {price}")
+    ts_raw = f"{row.get('日期', '')} {row.get('行情时间', '')}".strip()
+    ts = _parse_ts(ts_raw if ts_raw.strip() else None)
+    prev = row.get("昨日结算价")
+    return {
+        "name": str(row.get("名称", "COMEX黄金")),
+        "price": price,
+        "prev_settlement": float(prev) if prev not in (None, "-", 0) else None,
+        "timestamp": ts,
+    }
+
+
+def fetch_gc_daily_closes(symbol: str = "GC") -> list:
+    """COMEX 黄金日线收盘序列（时间升序），供详情页走势。"""
+    import akshare as ak
+
+    df = ak.futures_foreign_hist(symbol=symbol)
+    if df is None or df.empty:
+        return []
+    if "close" not in df.columns:
+        logger.warning("unexpected GC hist columns: %s", list(df.columns))
+        return []
+    return [float(c) for c in df["close"] if float(c) > 0]
+
+
 def current_sge_trade_session_open(now: Optional[datetime] = None) -> bool:
     """SGE 日盘约 09:00-15:30（简化处理，不含夜盘）。"""
     now = now or datetime.now()

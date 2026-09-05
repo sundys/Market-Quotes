@@ -1,6 +1,11 @@
 """MarketService：统一编排缓存、数据源与开闭市状态（AGENTS.md 第 10/13/20/23 节）。
 
-- 路由只调用本服务，禁止直接访问 yfinance/AKShare。
+数据源全部为开源 AKShare 生态（AGENTS.md 第 4 节调整，替换 Yahoo Finance）：
+- 美股三大指数：东方财富全球指数实时（em_service）
+- 国际黄金：COMEX 黄金期货实时与日线（新浪外盘，经 AKShare）
+- 上海黄金：上海黄金交易所（AKShare spot_quotations_sge / spot_hist_sge）
+
+- 路由只调用本服务。
 - 单个数据源失败只把对应行情标记 stale，不影响其它行情。
 """
 from __future__ import annotations
@@ -10,7 +15,7 @@ import threading
 import time
 import zoneinfo
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Optional
 
 from app.config import settings
 from app.models.quote import MarketQuote, compute_change
@@ -22,17 +27,18 @@ logger = logging.getLogger("market.service")
 TZ_CN = zoneinfo.ZoneInfo("Asia/Shanghai")
 TZ_US = zoneinfo.ZoneInfo("America/New_York")
 
-YF_SYMBOLS = {
-    "XAUUSD=X": ("gold_global", "国际黄金", "USD", "oz"),
-    "^NDX": ("nasdaq100", "纳斯达克100", "USD", None),
-    "^GSPC": ("sp500", "标普500", "USD", None),
-    "^DJI": ("dowjones", "道琼斯", "USD", None),
+# 各行情的定义；symbol 为对应数据源代码
+SYMBOLS = {
+    "gold_global": ("国际黄金期货", "GC", "USD", "oz"),
+    "nasdaq100": ("纳斯达克100", "100.NDX", "USD", None),
+    "sp500": ("标普500", "100.SPX", "USD", None),
+    "dowjones": ("道琼斯", "100.DJIA", "USD", None),
+    "gold_cn": ("上海黄金 Au99.99", "Au99.99", "CNY", "g"),
 }
 
-# XAUUSD=X 的 Yahoo FX 日内数据源不稳定（部分节点返回空），按 AGENTS.md 第 4.1 节
-# 回退到黄金期货 GC=F，且必须在代码与 UI 中明确标注"期货"，不得伪装成现货。
-GOLD_SPOT = "XAUUSD=X"
-GOLD_FUTURES = "GC=F"
+OVERVIEW_ORDER = ["gold_global", "nasdaq100", "sp500", "dowjones", "gold_cn"]
+
+YF_SYMBOLS = SYMBOLS  # 兼容旧引用
 
 
 def us_market_open(now: Optional[datetime] = None) -> bool:
@@ -44,110 +50,88 @@ def us_market_open(now: Optional[datetime] = None) -> bool:
     return 9 * 60 + 30 <= minutes <= 16 * 60
 
 
-def is_us_market_symbol(symbol: str) -> bool:
-    return symbol in ("^NDX", "^GSPC")
-
-
 class MarketService:
     def __init__(self, cache: CacheService) -> None:
         self.cache = cache
-        self.yf_health = SourceHealth(
+        # 每个数据源独立健康状态与请求锁（采集器与详情页历史共用锁）
+        self.em_health = SourceHealth(  # 东方财富：美股指数
             backoff_base=settings.yf_backoff_base,
             backoff_max=settings.yf_backoff_max,
             max_retries=settings.yf_max_retries,
         )
-        self.sge_health = SourceHealth(
+        self.gc_health = SourceHealth(  # 新浪外盘：COMEX 黄金
             backoff_base=settings.yf_backoff_base,
             backoff_max=settings.yf_backoff_max,
             max_retries=settings.yf_max_retries,
         )
-        # 采集器与详情页历史接口共用请求锁，避免对数据源形成请求风暴
-        self.yf_lock = threading.Lock()
+        self.sge_health = SourceHealth(  # 上海黄金交易所
+            backoff_base=settings.yf_backoff_base,
+            backoff_max=settings.yf_backoff_max,
+            max_retries=settings.yf_max_retries,
+        )
+        self.em_lock = threading.Lock()
+        self.gc_lock = threading.Lock()
         self.sge_lock = threading.Lock()
 
-    # ---- 详情页历史走势 ----
-    def history(self, quote_id: str, period: str) -> dict:
-        from app.services.market.history_service import history_service
-
-        if quote_id == "gold_cn":
-            return history_service.sge_history(period, self.cache.get_sge_sparkline(), self.sge_lock)
-
-        if quote_id in ("gold_global", "nasdaq100", "sp500", "dowjones"):
-            payload = self.cache.get_quote(quote_id)
-            # 黄金以当前实际使用的 symbol 为准（现货不可用时可能是期货 GC=F）
-            symbol = payload["symbol"] if payload else next(
-                s for s, v in YF_SYMBOLS.items() if v[0] == quote_id
-            )
-            return history_service.yf_history(symbol, period, self.yf_lock, quote_id)
-
-        return {"id": quote_id, "period": period, "points": [], "count": 0,
-                "is_stale": True, "server_time": time.time()}
-
     # ---- 写入（由后台采集器调用） ----
-    def apply_yfinance_snapshots(self, snapshots: dict) -> None:
-        """批量应用采集结果；国际黄金优先现货，现货缺失时回退期货并明确标注。"""
-        gold = snapshots.get(GOLD_SPOT) or snapshots.get(GOLD_FUTURES)
-        if gold is not None:
-            used_futures = GOLD_SPOT not in snapshots
-            self._apply_yf(
-                GOLD_FUTURES if used_futures else GOLD_SPOT,
-                gold,
-                is_futures=used_futures,
+    def apply_index_quotes(self, quotes: dict) -> None:
+        """应用美股指数实时快照：{quote_id: {name, price, prev_close, timestamp}}。"""
+        for quote_id, snap in quotes.items():
+            name, _, currency, unit = SYMBOLS[quote_id]
+            change, change_percent = compute_change(snap["price"], snap["prev_close"])
+            quote = MarketQuote(
+                id=quote_id,
+                name=name,
+                symbol=SYMBOLS[quote_id][1],
+                price=snap["price"],
+                change=change,
+                change_percent=change_percent,
+                currency=currency,
+                unit=unit,
+                source="AKShare/东财",
+                timestamp=snap["timestamp"].replace(tzinfo=TZ_CN).isoformat(),
+                market_status="open" if us_market_open() else "closed",
+                is_stale=False,
+                sparkline=snap.get("sparkline", []),
             )
-        for symbol in ("^NDX", "^GSPC"):
-            snapshot = snapshots.get(symbol)
-            if snapshot is not None:
-                self._apply_yf(symbol, snapshot)
+            if not quote.is_valid():
+                logger.warning("drop invalid index quote %s: %s", quote_id, quote.to_dict())
+                continue
+            self.cache.set_quote(quote_id, quote.to_dict())
+        self.cache.mark_success("em")
 
-    def apply_yfinance_snapshot(self, symbol: str, snapshot) -> None:
-        """兼容入口：应用单个标的快照。"""
-        self._apply_yf(symbol, snapshot)
-
-    def _apply_yf(self, symbol: str, snapshot, is_futures: bool = False) -> None:
-        if symbol == GOLD_FUTURES:
-            # 期货价格写入 gold_global 槽位，但名称/来源必须明确标注是期货
-            quote_id, _, currency, unit = YF_SYMBOLS[GOLD_SPOT]
-            name = "国际黄金期货"
-        else:
-            quote_id, name, currency, unit = YF_SYMBOLS[symbol]
-        ts = snapshot.timestamp
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=TZ_CN)
-        change, change_percent = compute_change(snapshot.price, snapshot.previous_close)
+    def apply_gold_quote(self, snap: dict) -> None:
+        """应用 COMEX 黄金期货实时快照（名称与来源明确标注期货）。"""
+        change, change_percent = compute_change(snap["price"], snap["prev_settlement"])
         quote = MarketQuote(
-            id=quote_id,
-            name=name,
-            symbol=symbol,
-            price=snapshot.price,
+            id="gold_global",
+            name=SYMBOLS["gold_global"][0],
+            symbol=SYMBOLS["gold_global"][1],
+            price=snap["price"],
             change=change,
             change_percent=change_percent,
-            currency=currency,
-            unit=unit,
-            source="yfinance(GC=F 期货)" if is_futures else "yfinance",
-            timestamp=ts.isoformat(),
-            market_status="open" if (us_market_open() if is_us_market_symbol(symbol) else True) else "closed",
+            currency="USD",
+            unit="oz",
+            source="AKShare/新浪外盘(期金)",
+            timestamp=snap["timestamp"].replace(tzinfo=TZ_CN).isoformat(),
+            market_status="open",
             is_stale=False,
-            sparkline=snapshot.sparkline,
+            sparkline=snap.get("sparkline", []),
         )
         if not quote.is_valid():
-            logger.warning("drop invalid quote %s: %s", symbol, quote.to_dict())
+            logger.warning("drop invalid gold quote: %s", quote.to_dict())
             return
-        self.cache.set_previous_close(symbol, snapshot.previous_close)
-        self.cache.set_quote(quote_id, quote.to_dict())
-        self.cache.mark_success("yfinance")
+        self.cache.set_quote("gold_global", quote.to_dict())
+        self.cache.mark_success("gc")
 
-    def apply_sge(self, price: float, ts: datetime, prev_close: Optional[float], prev_date=None) -> None:
-        if prev_close is not None and prev_date is not None:
-            cached_ts = ts
-            # 只有交易日切换后才更新 previous close（AGENTS.md 第 12 节）
-            if prev_date >= cached_ts.date():
-                prev_close = None
-        self.cache.set_previous_close("Au99.99", prev_close)
+    def apply_sge(self, price: float, ts: datetime) -> None:
+        """应用 SGE 实时快照；涨跌基准为缓存中的最近交易日收盘价。"""
+        prev_close = self.cache.get_previous_close("Au99.99")
         change, change_percent = compute_change(price, prev_close)
         quote = MarketQuote(
             id="gold_cn",
-            name="上海黄金 Au99.99",
-            symbol="Au99.99",
+            name=SYMBOLS["gold_cn"][0],
+            symbol=SYMBOLS["gold_cn"][1],
             price=price,
             change=change,
             change_percent=change_percent,
@@ -165,37 +149,46 @@ class MarketService:
         self.cache.append_sge_point(price)
         self.cache.mark_success("sge")
 
-    def mark_yfinance_stale(self, error: str) -> None:
-        """yfinance 失败：保留最后一次有效数据并标记 stale（AGENTS.md 第 9.2 节）。"""
-        _record_failure(self.yf_health, error)
-        for quote_id in YF_SYMBOLS.values():
-            payload = self.cache.get_quote(quote_id[0])
+    # ---- stale 标记 ----
+    def _mark_stale(self, quote_ids: list, health: SourceHealth, error: str) -> None:
+        _record_failure(health, error)
+        for quote_id in quote_ids:
+            payload = self.cache.get_quote(quote_id)
             if payload:
                 payload["is_stale"] = True
-                self.cache.set_quote(quote_id[0], payload)
+                self.cache.set_quote(quote_id, payload)
+
+    def mark_em_stale(self, error: str) -> None:
+        self._mark_stale(["nasdaq100", "sp500", "dowjones"], self.em_health, error)
+
+    def mark_gc_stale(self, error: str) -> None:
+        self._mark_stale(["gold_global"], self.gc_health, error)
 
     def mark_sge_stale(self, error: str) -> None:
-        _record_failure(self.sge_health, error)
-        payload = self.cache.get_quote("gold_cn")
-        if payload:
-            payload["is_stale"] = True
-            self.cache.set_quote("gold_cn", payload)
+        self._mark_stale(["gold_cn"], self.sge_health, error)
+
+    # ---- 详情页历史走势 ----
+    def history(self, quote_id: str, period: str) -> dict:
+        from app.services.market.history_service import history_service
+
+        if quote_id == "gold_cn":
+            return history_service.sge_history(period, self.cache.get_sge_sparkline(), self.sge_lock)
+        if quote_id == "gold_global":
+            return history_service.gc_history(period, self.gc_lock)
+        if quote_id in ("nasdaq100", "sp500", "dowjones"):
+            secid = SYMBOLS[quote_id][1]
+            return history_service.index_history(quote_id, secid, period, self.em_lock)
+        return {"id": quote_id, "period": period, "points": [], "count": 0,
+                "is_stale": True, "server_time": time.time()}
 
     # ---- 读取（API 路由调用，只返回缓存） ----
     def overview(self) -> dict:
         items = []
-        for quote_id, name, currency, unit in YF_SYMBOLS.values():
+        for quote_id in OVERVIEW_ORDER:
             payload = self.cache.get_quote(quote_id)
             if payload:
                 payload["market_status"] = _refresh_market_status(payload)
                 items.append(payload)
-        sge = self.cache.get_quote("gold_cn")
-        if sge:
-            sge["market_status"] = _refresh_market_status(sge)
-            items.append(sge)
-
-        order = {"gold_global": 0, "nasdaq100": 1, "sp500": 2, "dowjones": 3, "gold_cn": 4}
-        items.sort(key=lambda x: order.get(x["id"], 99))
         updated_at = max((i["timestamp"] for i in items), default=None)
         return {
             "updated_at": updated_at,
@@ -207,13 +200,15 @@ class MarketService:
         return {
             "status": "ok",
             "has_data": self.cache.has_any_data(),
-            "yfinance": self.yf_health.stats(),
+            "eastmoney": self.em_health.stats(),
+            "gc_sina": self.gc_health.stats(),
             "sge": self.sge_health.stats(),
             "cache": {
                 "cache_hits": self.cache.stats["cache_hits"],
                 "cache_misses": self.cache.stats["cache_misses"],
-                "yfinance_last_success": self.cache.stats["yfinance_last_success"],
-                "sge_last_success": self.cache.stats["sge_last_success"],
+                "em_last_success": self.cache.stats.get("em_last_success"),
+                "gc_last_success": self.cache.stats.get("gc_last_success"),
+                "sge_last_success": self.cache.stats.get("sge_last_success"),
             },
             "server_time": datetime.now(TZ_CN).isoformat(),
         }
@@ -237,9 +232,9 @@ def _sge_open(now: datetime) -> bool:
 def _refresh_market_status(payload: dict) -> str:
     """快照时按当前时间重算市场状态，不依赖采集时刻。"""
     symbol = payload.get("symbol", "")
-    if symbol in ("^NDX", "^GSPC"):
+    if symbol in ("100.NDX", "100.SPX", "100.DJIA"):
         return "open" if us_market_open() else "closed"
     if symbol == "Au99.99":
         return "open" if _sge_open(datetime.now(TZ_CN)) else "closed"
-    # 国际黄金近乎全天交易
+    # COMEX 期金接近全天交易
     return "open"

@@ -1,9 +1,12 @@
 """历史走势服务：详情页 天/周/月/半年/年 走势（AGENTS.md 第 29 节）。
 
-- yfinance 标的：按周期映射 period/interval 单标的下载。
-- SGE：日线来自 spot_hist_sge；当日走势用采集器累积的采样点。
-- 内存缓存按 (symbol, period) 带 TTL；请求失败时返回最近缓存并标 is_stale。
-- points 只含收盘价序列：走势图不画坐标轴刻度（AGENTS.md 第 55 节）。
+数据源全部为 AKShare 生态：
+- 美股指数：东方财富 K 线（em_service，分钟/日线）
+- COMEX 黄金：新浪外盘日线（akshare futures_foreign_hist）+ 东财分钟线
+- SGE：日线来自 spot_hist_sge；当日走势用采集器累积的采样点
+
+内存缓存按 (symbol, period) 带 TTL；请求失败时返回最近缓存并标 is_stale。
+points 只含收盘价序列：走势图不画坐标轴刻度（AGENTS.md 第 55 节）。
 """
 from __future__ import annotations
 
@@ -12,28 +15,27 @@ import math
 import time
 from typing import List, Optional, Tuple
 
-from app.services.market import akshare_service, yfinance_service
+from app.services.market import akshare_service, em_service
 
 logger = logging.getLogger("market.history")
 
 PERIODS = ("1d", "1w", "1m", "6m", "1y")
 
-# period -> (yfinance period, interval)
-_YF_RANGE = {
-    "1d": ("1d", "5m"),
-    "1w": ("5d", "30m"),
-    "1m": ("1mo", "1d"),
-    "6m": ("6mo", "1d"),
-    "1y": ("1y", "1d"),
+# period -> (东财 klt, lmt)
+_EM_RANGE = {
+    "1d": (5, 100),
+    "1w": (30, 80),
+    "1m": (101, 25),
+    "6m": (101, 130),
+    "1y": (101, 260),
 }
 
-# 缓存 TTL（秒）：日内数据新鲜度要求高，日线一天更新一次
 _TTL = {"1d": 60, "1w": 300, "1m": 900, "6m": 900, "1y": 3600}
 
 _MAX_POINTS = 400
 
-# SGE 各周期取最近 N 个交易日收盘
-_SGE_SLICE = {"1w": 5, "1m": 22, "6m": 130, "1y": 250}
+# 纯日线数据源各周期取最近 N 个收盘
+_DAILY_SLICE = {"1w": 5, "1m": 22, "6m": 130, "1y": 250}
 
 
 def _sanitize(points: List[float]) -> List[float]:
@@ -46,30 +48,74 @@ def _sanitize(points: List[float]) -> List[float]:
 
 class HistoryService:
     def __init__(self) -> None:
-        # (symbol, period) -> (缓存时间, points)
-        self._cache = {}
+        self._cache = {}  # (key, period) -> (缓存时间, points)
         self._sge_daily: Optional[Tuple[float, List[float]]] = None  # (日期戳, 收盘序列)
+        self._gc_daily: Optional[Tuple[float, List[float]]] = None
 
-    # ---- yfinance 标的 ----
-    def yf_history(self, symbol: str, period: str, lock, quote_id: str) -> dict:
-        key = (symbol, period)
-        cached = self._cache.get(key)
+    def _cached_or(self, key: str, period: str):
+        cached = self._cache.get((key, period))
         if cached is not None and time.time() - cached[0] < _TTL[period]:
-            return self._result(quote_id, period, cached[1], stale=False)
+            return cached[1]
+        return None
 
-        yf_period, interval = _YF_RANGE[period]
-        try:
-            with lock:
-                points = yfinance_service.fetch_history(symbol, yf_period, interval)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("history %s %s failed: %s", symbol, period, exc)
-            if cached is not None:
-                return self._result(quote_id, period, cached[1], stale=True)
-            return self._result(quote_id, period, [], stale=True)
+    def _store(self, key: str, period: str, points: List[float]) -> None:
+        self._cache[(key, period)] = (time.time(), points)
 
-        points = _sanitize(points)
-        self._cache[key] = (time.time(), points)
+    @staticmethod
+    def _result(quote_id: str, period: str, points: List[float], stale: bool) -> dict:
+        return {
+            "id": quote_id,
+            "period": period,
+            "points": points,
+            "count": len(points),
+            "is_stale": stale,
+            "server_time": time.time(),
+        }
+
+    # ---- 东财 K 线（美股指数 + COMEX 黄金分钟线） ----
+    def em_history(self, quote_id: str, secid: str, period: str, lock) -> dict:
+        klt, lmt = _EM_RANGE[period]
+        cache_key = f"{secid}:{klt}"
+        points = self._cached_or(cache_key, period)
+        if points is None:
+            try:
+                with lock:
+                    points = em_service.fetch_kline_closes(secid, klt, lmt)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("em history %s %s failed: %s", secid, period, exc)
+                stale_cache = self._cache.get((cache_key, period))
+                if stale_cache is not None:
+                    return self._result(quote_id, period, stale_cache[1], stale=True)
+                return self._result(quote_id, period, [], stale=True)
+            points = _sanitize(points)
+            self._store(cache_key, period, points)
         return self._result(quote_id, period, points, stale=False)
+
+    def index_history(self, quote_id: str, secid: str, period: str, lock) -> dict:
+        return self.em_history(quote_id, secid, period, lock)
+
+    def gc_history(self, period: str, lock) -> dict:
+        """COMEX 黄金：1d 用东财分钟线，其余用新浪日线切片。"""
+        if period == "1d":
+            return self.em_history("gold_global", em_service.GOLD_SECID, "1d", lock)
+        cache_key = "GC:daily"
+        daily = self._cached_or(cache_key, "1y")
+        if daily is None:
+            try:
+                with lock:
+                    daily = akshare_service.fetch_gc_daily_closes()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("gc daily history failed: %s", exc)
+                daily = None
+            if daily:
+                daily = _sanitize(daily)
+                self._store(cache_key, "1y", daily)
+            elif self._gc_daily is not None:
+                daily = self._gc_daily[1]
+            else:
+                return self._result("gold_global", period, [], stale=True)
+        self._gc_daily = (time.time(), daily)
+        return self._result("gold_global", period, daily[-_DAILY_SLICE[period]:], stale=False)
 
     # ---- SGE ----
     def sge_history(self, period: str, intraday: List[float], lock) -> dict:
@@ -94,18 +140,7 @@ class HistoryService:
                 return self._result(quote_id, period, [], stale=True)
 
         closes = self._sge_daily[1]
-        return self._result(quote_id, period, _sanitize(closes[-_SGE_SLICE[period]:]), stale=False)
-
-    @staticmethod
-    def _result(quote_id: str, period: str, points: List[float], stale: bool) -> dict:
-        return {
-            "id": quote_id,
-            "period": period,
-            "points": points,
-            "count": len(points),
-            "is_stale": stale,
-            "server_time": time.time(),
-        }
+        return self._result(quote_id, period, _sanitize(closes[-_DAILY_SLICE[period]:]), stale=False)
 
 
 history_service = HistoryService()
