@@ -6,11 +6,24 @@ import '../theme/app_colors.dart';
 import 'change_label.dart';
 import 'sparkline.dart';
 
-/// 核心黄金主卡片：深色背景（AGENTS.md 第 46/48 节）。
+/// 核心黄金深色主卡片（AGENTS.md 第 46/48 节）。
+/// 同一样式承载国际黄金（现货/期货）与中国黄金，副标题按 symbol 标注，
+/// 防止把期货价格当成现货、把人民币/克当成美元/盎司。
 class GoldHeroCard extends StatelessWidget {
   final MarketQuote? quote;
 
   const GoldHeroCard({super.key, this.quote});
+
+  String _subtitle(MarketQuote? q) {
+    switch (q?.symbol) {
+      case 'GC=F':
+        return 'COMEX 期金 · \$ / 盎司';
+      case 'Au99.99':
+        return '上海黄金交易所 · ¥ / 克';
+      default:
+        return 'XAU/USD · \$ / 盎司';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,8 +58,7 @@ class GoldHeroCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      // 现货与期货分别标注，防止把期货价格当成现货（AGENTS.md 第 4.1 节）
-                      (q?.symbol == 'GC=F') ? 'COMEX 期金 · \$ / 盎司' : 'XAU/USD · \$ / 盎司',
+                      _subtitle(q),
                       style: const TextStyle(
                         color: AppColors.textSecondaryInverse,
                         fontSize: 12,

@@ -11,6 +11,9 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      # 统一容器时区为中国标准时间，保证"更新于"时间与市场开闭市判断正确
+      - TZ=Asia/Shanghai
     volumes:
       # 行情磁盘缓存快照，容器重建不丢最近数据
       - market_cache:/data

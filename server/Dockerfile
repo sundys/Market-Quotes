@@ -5,7 +5,13 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    TZ=Asia/Shanghai
+
+# tzdata：TZ 环境变量与 zoneinfo（市场开闭市判断）都依赖它
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

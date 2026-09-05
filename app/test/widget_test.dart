@@ -125,6 +125,19 @@ void main() {
     expect(find.text('+0.53%'), findsOneWidget);
   });
 
+  testWidgets('hero card renders SGE gold in dark style with yuan price', (tester) async {
+    final overview =
+        MarketOverview.fromJson(jsonDecode(fakeOverviewJson) as Map<String, dynamic>);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: GoldHeroCard(quote: overview.byId('gold_cn'))),
+      ),
+    );
+    expect(find.text('上海黄金 Au99.99'), findsOneWidget);
+    expect(find.text('上海黄金交易所 · ¥ / 克'), findsOneWidget);
+    expect(find.text('¥958.00'), findsOneWidget);
+  });
+
   testWidgets('index card falls back to placeholder without data', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: IndexCard(quote: null))),

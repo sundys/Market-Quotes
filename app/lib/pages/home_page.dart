@@ -9,7 +9,6 @@ import '../services/settings_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/gold_hero_card.dart';
 import '../widgets/index_card.dart';
-import '../widgets/sge_gold_card.dart';
 
 /// 首页：打开即看，一眼知道涨跌（AGENTS.md 第 14/18/38 节）。
 class HomePage extends StatefulWidget {
@@ -33,6 +32,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _loading = true;
   bool _networkError = false;
   Timer? _timer;
+  final PageController _heroController = PageController();
+  int _heroPage = 0;
 
   @override
   void initState() {
@@ -88,6 +89,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _timer?.cancel();
+    _heroController.dispose();
     widget.settings.apiBaseUrl.removeListener(_onBaseUrlChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -129,11 +131,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 )
               else ...[
-                GoldHeroCard(quote: _overview?.byId('gold_global')),
+                // 黄金双卡：默认中国黄金，左滑切换国际黄金
+                SizedBox(
+                  height: 216,
+                  child: PageView(
+                    controller: _heroController,
+                    onPageChanged: (page) => setState(() => _heroPage = page),
+                    children: [
+                      GoldHeroCard(quote: _overview?.byId('gold_cn')),
+                      GoldHeroCard(quote: _overview?.byId('gold_global')),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(2, (i) {
+                    final active = i == _heroPage;
+                    return Container(
+                      width: active ? 16 : 6,
+                      height: 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: active ? AppColors.primary : AppColors.divider,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    );
+                  }),
+                ),
                 _sectionTitle('主要指数'),
                 _buildIndexRow(),
-                _sectionTitle('中国黄金'),
-                SgeGoldCard(quote: _overview?.byId('gold_cn')),
                 const SizedBox(height: 20),
                 _buildFooter(),
               ],
