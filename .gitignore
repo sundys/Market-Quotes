@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+server/cache/
+server/.env
+.pytest_cache/
+
+# Flutter / Android 构建产物由 app/.gitignore 管理；根目录兜底
+*.log
+.DS_Store
+
+# 真机测试截图等临时产物
+device_screenshot*.png

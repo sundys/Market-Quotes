@@ -1,0 +1,19 @@
+services:
+  backend:
+    # 优先使用 ghcr.io 上的 CI 构建镜像；本地开发可用 --build 现场构建
+    image: ghcr.io/sundys/market-quotes-backend:latest
+    build:
+      context: ./server
+    container_name: market-quotes-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # 行情磁盘缓存快照，容器重建不丢最近数据
+      - market_cache:/data
+
+volumes:
+  market_cache:

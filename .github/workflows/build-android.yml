@@ -1,0 +1,88 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/build-android.yml"
+
+jobs:
+  build:
+    name: Build debug APK (armv7 + arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 可选：配置了 KEYSTORE_BASE64 等 Secrets 时还原正式签名，产出 release 包；
+      # 未配置时跳过，照常产出 debug 包（debug 自动签名）。
+      - name: Restore release signing (optional)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > app/android/upload-keystore.jks
+            cat > app/android/key.properties <<EOF
+          storeFile=upload-keystore.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+            echo "release signing configured"
+          else
+            echo "KEYSTORE_BASE64 not set; will build debug-signed APK only"
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.5
+          cache: true
+
+      - name: Pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+
+      - name: Test
+        working-directory: app
+        run: flutter test
+
+      # 只编译 armv7 与 arm64 两个 ABI
+      - name: Build debug APK
+        working-directory: app
+        run: flutter build apk --debug --target-platform android-arm,android-arm64
+
+      - name: Build release APK
+        if: ${{ hashFiles('app/android/key.properties') != '' }}
+        working-directory: app
+        run: flutter build apk --release --target-platform android-arm,android-arm64
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-quotes-debug-apk
+          path: app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK artifact
+        if: ${{ hashFiles('app/android/key.properties') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-quotes-release-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
