@@ -51,12 +51,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _refresh();
   }
 
-  void _openDetail(MarketQuote? quote) {
-    if (quote == null) return;
+  /// 无实时数据时用静态元数据构造占位行情，保证卡片始终可进详情页。
+  static const Map<String, List<String>> _quoteMeta = {
+    'gold_cn': ['上海黄金 Au99.99', 'Au99.99', 'CNY'],
+    'gold_global': ['国际黄金', 'XAUUSD=X', 'USD'],
+    'nasdaq100': ['纳斯达克100', '^NDX', 'USD'],
+    'sp500': ['标普500', '^GSPC', 'USD'],
+    'dowjones': ['道琼斯', '^DJI', 'USD'],
+  };
+
+  void _openDetail(String quoteId) {
+    final meta = _quoteMeta[quoteId];
+    if (meta == null) return;
+    MarketQuote? quote = _overview?.byId(quoteId);
+    quote ??= MarketQuote(
+      id: quoteId,
+      name: meta[0],
+      symbol: meta[1],
+      currency: meta[2],
+      source: '',
+      marketStatus: 'unknown',
+      isStale: false,
+    );
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => DetailPage(quote: quote, repository: widget.repository),
+        builder: (_) => DetailPage(quote: quote!, repository: widget.repository),
       ),
     );
   }
@@ -150,11 +170,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onPageChanged: (page) => setState(() => _heroPage = page),
                     children: [
                       GestureDetector(
-                        onTap: () => _openDetail(_overview?.byId('gold_cn')),
+                        onTap: () => _openDetail('gold_cn'),
                         child: GoldHeroCard(quote: _overview?.byId('gold_cn')),
                       ),
                       GestureDetector(
-                        onTap: () => _openDetail(_overview?.byId('gold_global')),
+                        onTap: () => _openDetail('gold_global'),
                         child: GoldHeroCard(quote: _overview?.byId('gold_global')),
                       ),
                     ],
@@ -289,14 +309,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           final cards = [
             Expanded(
               child: GestureDetector(
-                onTap: () => _openDetail(ndx),
+                onTap: () => _openDetail('nasdaq100'),
                 child: IndexCard(quote: ndx),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: GestureDetector(
-                onTap: () => _openDetail(sp),
+                onTap: () => _openDetail('sp500'),
                 child: IndexCard(quote: sp, fallbackName: '标普500'),
               ),
             ),
@@ -304,16 +324,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (wide) return Row(children: cards);
           return Column(
             children: [
-              GestureDetector(onTap: () => _openDetail(ndx), child: IndexCard(quote: ndx)),
+              GestureDetector(onTap: () => _openDetail('nasdaq100'), child: IndexCard(quote: ndx)),
               const SizedBox(height: 12),
               GestureDetector(
-                  onTap: () => _openDetail(sp), child: IndexCard(quote: sp, fallbackName: '标普500')),
+                  onTap: () => _openDetail('sp500'), child: IndexCard(quote: sp, fallbackName: '标普500')),
             ],
           );
         }),
         const SizedBox(height: 12),
         GestureDetector(
-          onTap: () => _openDetail(dji),
+          onTap: () => _openDetail('dowjones'),
           child: IndexCard(quote: dji, fallbackName: '道琼斯'),
         ),
       ],
