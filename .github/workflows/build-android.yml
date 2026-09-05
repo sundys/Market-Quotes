@@ -32,7 +32,11 @@ jobs:
           keyAlias=$KEY_ALIAS
           keyPassword=$KEY_PASSWORD
           EOF
-            echo "release signing configured"
+            # 快速校验 Secrets 正确性，失败时给出明确报错而不是在 Gradle 深处失败
+            keytool -list -keystore app/android/upload-keystore.jks \
+              -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null \
+              || { echo "::error::签名 Secrets 校验失败：请检查 KEYSTORE_BASE64 是否为 'base64 -w0 upload-keystore.jks' 的完整输出、密码和别名是否正确"; exit 1; }
+            echo "release signing configured and verified"
           else
             echo "KEYSTORE_BASE64 not set; will build debug-signed APK only"
           fi
@@ -67,17 +71,18 @@ jobs:
         working-directory: app
         run: flutter build apk --debug --target-platform android-arm,android-arm64
 
-      - name: Build release APK
-        if: ${{ hashFiles('app/android/key.properties') != '' }}
-        working-directory: app
-        run: flutter build apk --release --target-platform android-arm,android-arm64
-
+      # debug 产物先上传，release 失败也不丢失 debug 包
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: market-quotes-debug-apk
           path: app/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+
+      - name: Build release APK
+        if: ${{ hashFiles('app/android/key.properties') != '' }}
+        working-directory: app
+        run: flutter build apk --release --target-platform android-arm,android-arm64
 
       - name: Upload release APK artifact
         if: ${{ hashFiles('app/android/key.properties') != '' }}
