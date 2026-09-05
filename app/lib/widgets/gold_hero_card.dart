@@ -31,22 +31,23 @@ class GoldHeroCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '国际黄金',
-                      style: TextStyle(
+                      q?.name ?? '国际黄金',
+                      style: const TextStyle(
                         color: AppColors.textPrimaryInverse,
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
-                      'XAU/USD · \$ / 盎司',
-                      style: TextStyle(
+                      // 现货与期货分别标注，防止把期货价格当成现货（AGENTS.md 第 4.1 节）
+                      (q?.symbol == 'GC=F') ? 'COMEX 期金 · \$ / 盎司' : 'XAU/USD · \$ / 盎司',
+                      style: const TextStyle(
                         color: AppColors.textSecondaryInverse,
                         fontSize: 12,
                       ),

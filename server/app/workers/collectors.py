@@ -21,7 +21,7 @@ from app.services.market.market_service import MarketService, us_market_open
 
 logger = logging.getLogger("market.workers")
 
-YF_SYMBOLS = ["XAUUSD=X", "^NDX", "^GSPC"]
+YF_SYMBOLS = ["XAUUSD=X", "GC=F", "^NDX", "^GSPC"]
 
 
 class FetchBusy(Exception):
@@ -87,8 +87,9 @@ async def yfinance_collector(service: MarketService) -> None:
                 timeout=_fetch_timeout(), lock=lock,
             )
             latency = int((time.perf_counter() - started) * 1000)
-            for symbol, snapshot in snapshots.items():
-                service.apply_yfinance_snapshot(symbol, snapshot)
+            if "XAUUSD=X" not in snapshots and "GC=F" in snapshots:
+                logger.info("XAUUSD=X 无数据，国际黄金回退为期货 GC=F")
+            service.apply_yfinance_snapshots(snapshots)
             service.yf_health.on_success()
             _log_fetch("yfinance", ",".join(snapshots.keys()), "ok", latency)
             service.cache.save_disk()

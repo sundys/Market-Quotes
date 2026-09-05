@@ -79,6 +79,29 @@ def test_sge_source_isolated_from_yfinance(tmp_path):
     assert by_id["gold_cn"]["is_stale"] is False
 
 
+def test_gold_falls_back_to_futures_when_spot_missing(tmp_path):
+    """XAUUSD=X 无数据时回退 GC=F，且必须明确标注期货（AGENTS.md 第 4.1 节）。"""
+    svc = make_service(tmp_path)
+    spot_snap = SymbolSnapshot(price=3500.0, previous_close=3480.0,
+                               timestamp=datetime(2026, 9, 5, 12, 0), sparkline=[])
+    fut_snap = SymbolSnapshot(price=3520.0, previous_close=3495.0,
+                              timestamp=datetime(2026, 9, 5, 12, 0), sparkline=[])
+    # 现货优先
+    svc.apply_yfinance_snapshots({"XAUUSD=X": spot_snap, "GC=F": fut_snap})
+    item = svc.cache.get_quote("gold_global")
+    assert item["name"] == "国际黄金"
+    assert item["symbol"] == "XAUUSD=X"
+    assert item["price"] == 3500.0
+    # 现货缺失 → 期货，且名称/来源明确标注
+    svc2 = make_service(tmp_path)
+    svc2.apply_yfinance_snapshots({"GC=F": fut_snap})
+    item2 = svc2.cache.get_quote("gold_global")
+    assert item2["name"] == "国际黄金期货"
+    assert item2["symbol"] == "GC=F"
+    assert "期货" in item2["source"]
+    assert item2["price"] == 3520.0
+
+
 def test_overview_empty_returns_empty_items(tmp_path):
     svc = make_service(tmp_path)
     overview = svc.overview()

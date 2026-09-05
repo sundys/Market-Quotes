@@ -27,6 +27,11 @@ YF_SYMBOLS = {
     "^GSPC": ("sp500", "标普500", "USD", None),
 }
 
+# XAUUSD=X 的 Yahoo FX 日内数据源不稳定（部分节点返回空），按 AGENTS.md 第 4.1 节
+# 回退到黄金期货 GC=F，且必须在代码与 UI 中明确标注"期货"，不得伪装成现货。
+GOLD_SPOT = "XAUUSD=X"
+GOLD_FUTURES = "GC=F"
+
 
 def us_market_open(now: Optional[datetime] = None) -> bool:
     """美股 9:30-16:00 ET，周一至周五（不含节假日，第一阶段简化）。"""
@@ -56,8 +61,32 @@ class MarketService:
         )
 
     # ---- 写入（由后台采集器调用） ----
+    def apply_yfinance_snapshots(self, snapshots: dict) -> None:
+        """批量应用采集结果；国际黄金优先现货，现货缺失时回退期货并明确标注。"""
+        gold = snapshots.get(GOLD_SPOT) or snapshots.get(GOLD_FUTURES)
+        if gold is not None:
+            used_futures = GOLD_SPOT not in snapshots
+            self._apply_yf(
+                GOLD_FUTURES if used_futures else GOLD_SPOT,
+                gold,
+                is_futures=used_futures,
+            )
+        for symbol in ("^NDX", "^GSPC"):
+            snapshot = snapshots.get(symbol)
+            if snapshot is not None:
+                self._apply_yf(symbol, snapshot)
+
     def apply_yfinance_snapshot(self, symbol: str, snapshot) -> None:
-        quote_id, name, currency, unit = YF_SYMBOLS[symbol]
+        """兼容入口：应用单个标的快照。"""
+        self._apply_yf(symbol, snapshot)
+
+    def _apply_yf(self, symbol: str, snapshot, is_futures: bool = False) -> None:
+        if symbol == GOLD_FUTURES:
+            # 期货价格写入 gold_global 槽位，但名称/来源必须明确标注是期货
+            quote_id, _, currency, unit = YF_SYMBOLS[GOLD_SPOT]
+            name = "国际黄金期货"
+        else:
+            quote_id, name, currency, unit = YF_SYMBOLS[symbol]
         ts = snapshot.timestamp
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=TZ_CN)
@@ -71,7 +100,7 @@ class MarketService:
             change_percent=change_percent,
             currency=currency,
             unit=unit,
-            source="yfinance",
+            source="yfinance(GC=F 期货)" if is_futures else "yfinance",
             timestamp=ts.isoformat(),
             market_status="open" if (us_market_open() if is_us_market_symbol(symbol) else True) else "closed",
             is_stale=False,
