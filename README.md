@@ -51,14 +51,10 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```bash
 cd app
 flutter pub get
-flutter run            # 默认后端地址 http://200.200.200.29:8000
+flutter run
 ```
 
-用编译参数覆盖后端地址：
-
-```bash
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000   # Android 模拟器访问宿主机
-```
+后端地址不写死在代码里：首次打开在「设置 → 后端地址」填入你的服务地址（如 `http://192.168.1.10:8000`），保存即生效。
 
 ## 部署
 

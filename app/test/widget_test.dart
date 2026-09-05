@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:market_quotes/models/market_quote.dart';
 import 'package:market_quotes/services/api_client.dart';
 import 'package:market_quotes/services/market_repository.dart';
+import 'package:market_quotes/services/settings_service.dart';
 import 'package:market_quotes/theme/app_colors.dart';
 import 'package:market_quotes/widgets/gold_hero_card.dart';
 import 'package:market_quotes/widgets/index_card.dart';
@@ -35,18 +36,54 @@ const String fakeOverviewJson = '''
 Future<MarketRepository> makeRepository({String? responseBody}) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
+  final settings = SettingsService(prefs);
+  await settings.setApiBaseUrl('http://test.example:8000');
   final api = ApiClient(
-    client: MockClient((request) async => http.Response(
-          responseBody ?? fakeOverviewJson,
-          200,
-          headers: {'content-type': 'application/json; charset=utf-8'},
-        )),
+    client: MockClient((request) async {
+      // 后端地址必须来自设置，而不是硬编码常量
+      expect(request.url.host, 'test.example');
+      return http.Response(
+        responseBody ?? fakeOverviewJson,
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    }),
   );
-  return MarketRepository(apiClient: api, prefs: prefs);
+  return MarketRepository(apiClient: api, prefs: prefs, settings: settings);
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('settings normalizes backend url', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsService(prefs);
+    await settings.setApiBaseUrl(' 192.168.1.5:8000/ ');
+    expect(settings.apiBaseUrl.value, 'http://192.168.1.5:8000');
+    expect(settings.isConfigured, isTrue);
+    await settings.setApiBaseUrl('   ');
+    expect(settings.isConfigured, isFalse);
+  });
+
+  test('repository skips fetch when backend not configured', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsService(prefs);
+    var called = false;
+    final repo = MarketRepository(
+      apiClient: ApiClient(
+        client: MockClient((request) async {
+          called = true;
+          return http.Response('{}', 200);
+        }),
+      ),
+      prefs: prefs,
+      settings: settings,
+    );
+    expect(await repo.fetchOverview(), isNull);
+    expect(called, isFalse);
+  });
 
   test('repository fetches and caches overview', () async {
     final repo = await makeRepository();
@@ -55,12 +92,14 @@ void main() {
     expect(overview!.byId('gold_global')!.price, 3521.80);
 
     // 第二次应能从本地缓存读出（即使后端不可达）
-    final prefs = await SharedPreferences.getInstance();
+    final prefs2 = await SharedPreferences.getInstance();
+    final settings2 = SettingsService(prefs2);
     final offlineRepo = MarketRepository(
       apiClient: ApiClient(
         client: MockClient((request) async => http.Response('', 500)),
       ),
-      prefs: prefs,
+      prefs: prefs2,
+      settings: settings2,
     );
     final cached = await offlineRepo.loadCached();
     expect(cached, isNotNull);

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/format.dart';
 import '../models/market_quote.dart';
 import '../services/market_repository.dart';
+import '../services/settings_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/gold_hero_card.dart';
 import '../widgets/index_card.dart';
@@ -13,11 +14,13 @@ import '../widgets/sge_gold_card.dart';
 /// 首页：打开即看，一眼知道涨跌（AGENTS.md 第 14/18/38 节）。
 class HomePage extends StatefulWidget {
   final MarketRepository repository;
+  final SettingsService settings;
   final Duration refreshInterval;
 
   const HomePage({
     super.key,
     required this.repository,
+    required this.settings,
     this.refreshInterval = const Duration(seconds: 60),
   });
 
@@ -35,7 +38,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 用户在设置页修改后端地址后立即重新拉取
+    widget.settings.apiBaseUrl.addListener(_onBaseUrlChanged);
     _init();
+  }
+
+  void _onBaseUrlChanged() {
+    if (!mounted) return;
+    setState(() {}); // 立即反映“已配置/未配置”状态
+    _refresh();
   }
 
   Future<void> _init() async {
@@ -47,7 +58,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _loading = _overview == null;
     });
     await _refresh();
-    // refreshInterval 为 0 时不轮询（用于测试）
     if (widget.refreshInterval > Duration.zero) {
       _timer = Timer.periodic(widget.refreshInterval, (_) => _refresh());
     }
@@ -78,6 +88,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _timer?.cancel();
+    widget.settings.apiBaseUrl.removeListener(_onBaseUrlChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -110,7 +121,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             children: [
               _buildHeader(context),
               const SizedBox(height: 20),
-              if (_loading)
+              if (!widget.settings.isConfigured)
+                _buildNotConfigured(context)
+              else if (_loading)
                 const Padding(
                   padding: EdgeInsets.only(top: 120),
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
@@ -127,6 +140,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 未配置后端地址时的引导（地址只在设置页录入，不写死在代码里）。
+  Widget _buildNotConfigured(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.dns_outlined, size: 48, color: AppColors.textSecondary),
+          const SizedBox(height: 16),
+          const Text(
+            '尚未配置后端地址',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '请先在设置中填写你自己部署的\n行情后端服务地址',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5, height: 1.5),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            icon: const Icon(Icons.settings_outlined, size: 18),
+            label: const Text('去设置'),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- release 包不会像 debug 包那样自动附加网络权限，必须显式声明 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="market_quotes"
+        android:label="行情"
+        android:usesCleartextTraffic="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -10,13 +10,13 @@ on:
 
 jobs:
   build:
-    name: Build debug APK (armv7 + arm64)
+    name: Build release APK (armv7 + arm64, split)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # 可选：配置了 KEYSTORE_BASE64 等 Secrets 时还原正式签名，产出 release 包；
-      # 未配置时跳过，照常产出 debug 包（debug 自动签名）。
+      # 可选：配置了 KEYSTORE_BASE64 等 Secrets 时还原正式签名；
+      # 未配置时回退 debug 签名（可安装测试，但不能上架）。
       - name: Restore release signing (optional)
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -38,7 +38,7 @@ jobs:
               || { echo "::error::签名 Secrets 校验失败：请检查 KEYSTORE_BASE64 是否为 'base64 -w0 upload-keystore.jks' 的完整输出、密码和别名是否正确"; exit 1; }
             echo "release signing configured and verified"
           else
-            echo "KEYSTORE_BASE64 not set; will build debug-signed APK only"
+            echo "KEYSTORE_BASE64 not set; release APK will be debug-signed"
           fi
 
       - name: Set up JDK 17
@@ -66,28 +66,21 @@ jobs:
         working-directory: app
         run: flutter test
 
-      # 只编译 armv7 与 arm64 两个 ABI
-      - name: Build debug APK
+      # 只编译 armv7 与 arm64 两个 ABI，按架构拆分出独立 APK
+      - name: Build release APKs
         working-directory: app
-        run: flutter build apk --debug --target-platform android-arm,android-arm64
+        run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
 
-      # debug 产物先上传，release 失败也不丢失 debug 包
-      - name: Upload debug APK artifact
+      - name: Upload arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: market-quotes-debug-apk
-          path: app/build/app/outputs/flutter-apk/app-debug.apk
+          name: market-quotes-release-arm64-v8a
+          path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
 
-      - name: Build release APK
-        if: ${{ hashFiles('app/android/key.properties') != '' }}
-        working-directory: app
-        run: flutter build apk --release --target-platform android-arm,android-arm64
-
-      - name: Upload release APK artifact
-        if: ${{ hashFiles('app/android/key.properties') != '' }}
+      - name: Upload armv7 APK
         uses: actions/upload-artifact@v4
         with:
-          name: market-quotes-release-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          name: market-quotes-release-armeabi-v7a
+          path: app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           if-no-files-found: error

@@ -125,21 +125,14 @@ sudo ufw allow 8000/tcp
 
 ## App 侧配置
 
-App 内后端地址默认为 `http://200.200.200.29:8000`，部署到新服务器后重新编译：
+后端地址不写死在代码里：安装 App 后在「设置 → 后端地址」中填入你的服务器地址（如 `http://<服务器IP>:8000`），保存后立即生效并持久化在设备本地。
 
-```bash
-flutter build apk --debug \
-  --dart-define=API_BASE_URL=http://<服务器IP>:8000
-```
-
-> 注意：release 正式包默认禁止明文 HTTP，若用 `http://` 需要在 `app/android/app/src/main/AndroidManifest.xml` 的 `<application>` 上加 `android:usesCleartextTraffic="true"`，或改用 HTTPS 域名（debug 包不受影响）。
+> release 包已在 AndroidManifest 中声明 `INTERNET` 权限并开启 `usesCleartextTraffic`，允许 `http://` 明文访问；改用 HTTPS 更安全，只需在设置里填 `https://` 地址。
 
 ### 正式签名（可选）
 
 - 本地：参照 `app/android/key.properties.example` 生成 `app/android/key.properties` 并把 keystore 放到 `app/android/` 下（已 gitignore），之后 `flutter build apk --release` 即为正式签名；未配置时自动回退 debug 签名
 - CI：在 GitHub 仓库 Settings → Secrets and variables → Actions 配置 4 个 Secrets：`KEYSTORE_BASE64`（keystore 文件 base64，`base64 -w0 upload-keystore.jks` 生成）、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`，配置后 `build-android.yml` 会自动额外产出 `market-quotes-release-apk` artifact
-
-CI 构建的 APK 默认已指向 `http://200.200.200.29:8000`，如需修改默认地址，改 `app/lib/services/api_client.dart` 中的 `kApiBaseUrl`。
 
 ---
 
@@ -147,7 +140,7 @@ CI 构建的 APK 默认已指向 `http://200.200.200.29:8000`，如需修改默�
 
 | 工作流 | 触发 | 产物 |
 |---|---|---|
-| `build-android.yml` | push 到 main（app/** 变更）或手动 | 仅含 **armv7 + arm64** 的 debug APK，可在 Actions 页面 Artifacts 下载 |
+| `build-android.yml` | push 到 main（app/** 变更）或手动 | 正式版 APK 按 ABI 拆分：**armv7**（`armeabi-v7a`）与 **arm64**（`arm64-v8a`）两个独立 artifact |
 | `docker.yml` | push 到 main（server/** 变更）、打 `v*` tag 或手动 | 多架构镜像（amd64 + arm64）推送到 `ghcr.io/sundys/market-quotes-backend` |
 
 镜像 tag 规则：
