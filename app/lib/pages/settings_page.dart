@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/settings_service.dart';
 import '../theme/app_colors.dart';
@@ -16,11 +17,15 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _urlController;
+  String _version = '';
 
   @override
   void initState() {
     super.initState();
     _urlController = TextEditingController(text: widget.settings.apiBaseUrl.value);
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _version = 'v${info.version}');
+    });
   }
 
   @override
@@ -127,9 +132,9 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 20),
           _group(
             title: '关于',
-            children: const [
-              _InfoTile(title: '版本', subtitle: 'v1.0.0'),
-              _InfoTile(
+            children: [
+              _InfoTile(title: '版本', subtitle: _version.isEmpty ? '…' : _version),
+              const _InfoTile(
                 title: '免责声明',
                 subtitle: '本应用仅展示行情，不提供任何交易功能；价格可能延迟，不构成投资建议。',
               ),

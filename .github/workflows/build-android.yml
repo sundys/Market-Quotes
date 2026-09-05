@@ -75,10 +75,20 @@ jobs:
         working-directory: app
         run: flutter test
 
-      # 只编译 armv7 与 arm64 两个 ABI，按架构拆分出独立 APK
+      # 只编译 armv7 与 arm64 两个 ABI，按架构拆分出独立 APK；
+      # tag 触发时版本号自动取 tag 名（去掉 v 前缀），与发布版本永远一致
       - name: Build release APKs
         working-directory: app
-        run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            flutter build apk --release --split-per-abi \
+              --target-platform android-arm,android-arm64 \
+              --build-name="${GITHUB_REF_NAME#v}" --build-number="${GITHUB_RUN_NUMBER}"
+          else
+            flutter build apk --release --split-per-abi \
+              --target-platform android-arm,android-arm64 \
+              --build-number="${GITHUB_RUN_NUMBER}"
+          fi
 
       - name: Upload arm64 APK artifact
         uses: actions/upload-artifact@v4
