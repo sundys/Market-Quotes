@@ -42,6 +42,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 - 首页数据：`GET /api/market/overview`
+- 详情走势：`GET /api/market/{id}/history?period=1d|1w|1m|6m|1y`（天/周/月/半年/年；SGE 当日走势为后端累积采样点）
 - 健康检查/监控：`GET /health`（含 429 计数、缓存命中、最后成功时间）
 
 环境变量见 `server/.env.example`（采集间隔、退避参数、缓存 TTL 等）。

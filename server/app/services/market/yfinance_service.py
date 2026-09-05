@@ -70,6 +70,33 @@ def _parse_symbol(df_slice) -> Optional[SymbolSnapshot]:
     )
 
 
+def fetch_history(symbol: str, period: str, interval: str) -> List[float]:
+    """单标的历史收盘序列（详情页走势）。429/空数据抛 RateLimitError。"""
+    import yfinance as yf
+
+    try:
+        df = yf.download(
+            tickers=symbol,
+            period=period,
+            interval=interval,
+            group_by="ticker",
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if _detect_rate_limit(exc):
+            raise RateLimitError(str(exc)) from exc
+        raise
+
+    if df is None or df.empty:
+        raise RateLimitError(f"no history for {symbol} {period}/{interval}")
+    closes = df["Close"].dropna() if "Close" in df.columns else df.dropna()
+    if closes.empty:
+        raise RateLimitError(f"no history for {symbol} {period}/{interval}")
+    return [float(v) for v in closes.values]
+
+
 def fetch_batch(symbols: List[str], period: str = "5d", interval: str = "15m") -> Dict[str, SymbolSnapshot]:
     """批量获取多个标的，返回 symbol -> SymbolSnapshot。任何 429 抛 RateLimitError。"""
     import yfinance as yf

@@ -45,5 +45,33 @@ class ApiClient {
     }
   }
 
+  /// 获取历史走势（收盘价序列）。后端地址由设置页配置。
+  Future<MarketHistory> fetchHistory({
+    required String baseUrl,
+    required String quoteId,
+    required String period,
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    if (baseUrl.trim().isEmpty) {
+      throw ApiException('未配置后端地址');
+    }
+    try {
+      final response = await _client
+          .get(Uri.parse('$baseUrl/api/market/$quoteId/history?period=$period'))
+          .timeout(timeout);
+      if (response.statusCode != 200) {
+        throw ApiException('服务器异常 (${response.statusCode})');
+      }
+      final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      return MarketHistory.fromJson(body);
+    } on TimeoutException {
+      throw ApiException('连接超时');
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException('网络连接失败');
+    }
+  }
+
   void dispose() => _client.close();
 }

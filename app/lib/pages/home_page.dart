@@ -9,6 +9,7 @@ import '../services/settings_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/gold_hero_card.dart';
 import '../widgets/index_card.dart';
+import 'detail_page.dart';
 
 /// 首页：打开即看，一眼知道涨跌（AGENTS.md 第 14/18/38 节）。
 class HomePage extends StatefulWidget {
@@ -48,6 +49,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {}); // 立即反映“已配置/未配置”状态
     _refresh();
+  }
+
+  void _openDetail(MarketQuote? quote) {
+    if (quote == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DetailPage(quote: quote, repository: widget.repository),
+      ),
+    );
   }
 
   Future<void> _init() async {
@@ -131,15 +142,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 )
               else ...[
-                // 黄金双卡：默认中国黄金，左滑切换国际黄金
+                // 黄金双卡：默认中国黄金，左滑切换国际黄金；点击进详情
                 SizedBox(
                   height: 216,
                   child: PageView(
                     controller: _heroController,
                     onPageChanged: (page) => setState(() => _heroPage = page),
                     children: [
-                      GoldHeroCard(quote: _overview?.byId('gold_cn')),
-                      GoldHeroCard(quote: _overview?.byId('gold_global')),
+                      GestureDetector(
+                        onTap: () => _openDetail(_overview?.byId('gold_cn')),
+                        child: GoldHeroCard(quote: _overview?.byId('gold_cn')),
+                      ),
+                      GestureDetector(
+                        onTap: () => _openDetail(_overview?.byId('gold_global')),
+                        child: GoldHeroCard(quote: _overview?.byId('gold_global')),
+                      ),
                     ],
                   ),
                 ),
@@ -260,26 +277,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// 屏幕较窄时指数卡片上下排列，禁止压缩价格（AGENTS.md 第 49 节）。
+  /// 指数：纳指与标普并排，道琼斯整宽；点击进详情。
   Widget _buildIndexRow() {
     final ndx = _overview?.byId('nasdaq100');
     final sp = _overview?.byId('sp500');
-    return LayoutBuilder(builder: (context, constraints) {
-      final wide = constraints.maxWidth >= 360;
-      final cards = [
-        Expanded(child: IndexCard(quote: ndx)),
-        const SizedBox(width: 12),
-        Expanded(child: IndexCard(quote: sp, fallbackName: '标普500')),
-      ];
-      if (wide) return Row(children: cards);
-      return Column(
-        children: [
-          IndexCard(quote: ndx),
-          const SizedBox(height: 12),
-          IndexCard(quote: sp, fallbackName: '标普500'),
-        ],
-      );
-    });
+    final dji = _overview?.byId('dowjones');
+    return Column(
+      children: [
+        LayoutBuilder(builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 360;
+          final cards = [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _openDetail(ndx),
+                child: IndexCard(quote: ndx),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _openDetail(sp),
+                child: IndexCard(quote: sp, fallbackName: '标普500'),
+              ),
+            ),
+          ];
+          if (wide) return Row(children: cards);
+          return Column(
+            children: [
+              GestureDetector(onTap: () => _openDetail(ndx), child: IndexCard(quote: ndx)),
+              const SizedBox(height: 12),
+              GestureDetector(
+                  onTap: () => _openDetail(sp), child: IndexCard(quote: sp, fallbackName: '标普500')),
+            ],
+          );
+        }),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () => _openDetail(dji),
+          child: IndexCard(quote: dji, fallbackName: '道琼斯'),
+        ),
+      ],
+    );
   }
 
   Widget _buildFooter() {

@@ -58,6 +58,10 @@ class CacheService:
             self._sge_sparkline.append(round(price, 2))
             self._quotes.setdefault("gold_cn", {})["sparkline"] = list(self._sge_sparkline)
 
+    def get_sge_sparkline(self) -> List[float]:
+        with self._lock:
+            return list(self._sge_sparkline)
+
     def set_sge_sparkline(self, points: List[float]) -> None:
         with self._lock:
             self._sge_sparkline.clear()

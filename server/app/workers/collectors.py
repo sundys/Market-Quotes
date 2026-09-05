@@ -21,7 +21,7 @@ from app.services.market.market_service import MarketService, us_market_open
 
 logger = logging.getLogger("market.workers")
 
-YF_SYMBOLS = ["XAUUSD=X", "GC=F", "^NDX", "^GSPC"]
+YF_SYMBOLS = ["XAUUSD=X", "GC=F", "^NDX", "^GSPC", "^DJI"]
 
 
 class FetchBusy(Exception):
@@ -66,7 +66,7 @@ def _any_recent_gold_activity() -> bool:
 
 
 async def yfinance_collector(service: MarketService) -> None:
-    lock = threading.Lock()
+    lock = service.yf_lock
     while True:
         interval = settings.yf_min_interval
         if not us_market_open() and not _any_recent_gold_activity():
@@ -115,7 +115,7 @@ async def yfinance_collector(service: MarketService) -> None:
 async def sge_collector(service: MarketService) -> None:
     from app.services.market.akshare_service import current_sge_trade_session_open
 
-    lock = threading.Lock()
+    lock = service.sge_lock
     prev_close = service.cache.get_previous_close("Au99.99")
     prev_date = None
 

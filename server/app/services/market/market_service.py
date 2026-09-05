@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import zoneinfo
 from datetime import datetime
@@ -25,6 +26,7 @@ YF_SYMBOLS = {
     "XAUUSD=X": ("gold_global", "国际黄金", "USD", "oz"),
     "^NDX": ("nasdaq100", "纳斯达克100", "USD", None),
     "^GSPC": ("sp500", "标普500", "USD", None),
+    "^DJI": ("dowjones", "道琼斯", "USD", None),
 }
 
 # XAUUSD=X 的 Yahoo FX 日内数据源不稳定（部分节点返回空），按 AGENTS.md 第 4.1 节
@@ -59,6 +61,27 @@ class MarketService:
             backoff_max=settings.yf_backoff_max,
             max_retries=settings.yf_max_retries,
         )
+        # 采集器与详情页历史接口共用请求锁，避免对数据源形成请求风暴
+        self.yf_lock = threading.Lock()
+        self.sge_lock = threading.Lock()
+
+    # ---- 详情页历史走势 ----
+    def history(self, quote_id: str, period: str) -> dict:
+        from app.services.market.history_service import history_service
+
+        if quote_id == "gold_cn":
+            return history_service.sge_history(period, self.cache.get_sge_sparkline(), self.sge_lock)
+
+        if quote_id in ("gold_global", "nasdaq100", "sp500", "dowjones"):
+            payload = self.cache.get_quote(quote_id)
+            # 黄金以当前实际使用的 symbol 为准（现货不可用时可能是期货 GC=F）
+            symbol = payload["symbol"] if payload else next(
+                s for s, v in YF_SYMBOLS.items() if v[0] == quote_id
+            )
+            return history_service.yf_history(symbol, period, self.yf_lock, quote_id)
+
+        return {"id": quote_id, "period": period, "points": [], "count": 0,
+                "is_stale": True, "server_time": time.time()}
 
     # ---- 写入（由后台采集器调用） ----
     def apply_yfinance_snapshots(self, snapshots: dict) -> None:
@@ -171,7 +194,7 @@ class MarketService:
             sge["market_status"] = _refresh_market_status(sge)
             items.append(sge)
 
-        order = {"gold_global": 0, "nasdaq100": 1, "sp500": 2, "gold_cn": 3}
+        order = {"gold_global": 0, "nasdaq100": 1, "sp500": 2, "dowjones": 3, "gold_cn": 4}
         items.sort(key=lambda x: order.get(x["id"], 99))
         updated_at = max((i["timestamp"] for i in items), default=None)
         return {

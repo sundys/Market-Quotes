@@ -102,3 +102,29 @@ class MarketOverview {
     return null;
   }
 }
+
+/// GET /api/market/{id}/history 的响应模型：收盘价序列（走势图无坐标轴）。
+class MarketHistory {
+  final String id;
+  final String period;
+  final List<double> points;
+  final bool isStale;
+
+  const MarketHistory({
+    required this.id,
+    required this.period,
+    required this.points,
+    required this.isStale,
+  });
+
+  factory MarketHistory.fromJson(Map<String, dynamic> json) {
+    return MarketHistory(
+      id: json['id'] as String? ?? '',
+      period: json['period'] as String? ?? '',
+      points: ((json['points'] as List?) ?? const [])
+          .map((e) => (e as num).toDouble())
+          .toList(),
+      isStale: json['is_stale'] as bool? ?? false,
+    );
+  }
+}

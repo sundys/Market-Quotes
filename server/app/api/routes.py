@@ -27,6 +27,18 @@ def market_overview():
     return get_service().overview()
 
 
+@router.get("/market/{quote_id}/history")
+def market_history(quote_id: str, period: str = "1m"):
+    """详情页历史走势：period ∈ 1d/1w/1m/6m/1y（读缓存，失败返回最近缓存并标 stale）。"""
+    from fastapi import HTTPException
+
+    from app.services.market.history_service import PERIODS
+
+    if period not in PERIODS:
+        raise HTTPException(status_code=400, detail=f"period must be one of {PERIODS}")
+    return get_service().history(quote_id, period)
+
+
 @root_router.get("/health")
 def health():
     """供监控/人工检查：数据源健康、429 计数、缓存命中、最后成功时间。"""

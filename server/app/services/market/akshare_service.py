@@ -106,6 +106,27 @@ def fetch_sge_prev_close(symbol: str = "Au99.99") -> Optional[SgePrevClose]:
     return SgePrevClose(trade_date=last_date, close=last_close)
 
 
+def fetch_sge_daily_closes(symbol: str = "Au99.99") -> list:
+    """SGE 日线收盘价序列（时间升序），供详情页 周/月/半年/年 走势。"""
+    import akshare as ak
+
+    df = ak.spot_hist_sge(symbol=symbol)
+    if df is None or df.empty:
+        return []
+    date_col = _pick_column(df, ("date", "日期"))
+    close_col = _pick_column(df, ("close", "收盘", "收盘价"))
+    if date_col is None or close_col is None:
+        logger.warning("unexpected sge hist columns: %s", list(df.columns))
+        return []
+    rows = []
+    for d, c in zip(df[date_col], df[close_col]):
+        c = float(c)
+        if c > 0:
+            rows.append((str(d), c))
+    rows.sort(key=lambda x: x[0])
+    return [c for _, c in rows]
+
+
 def current_sge_trade_session_open(now: Optional[datetime] = None) -> bool:
     """SGE 日盘约 09:00-15:30（简化处理，不含夜盘）。"""
     now = now or datetime.now()
