@@ -106,25 +106,27 @@ def fetch_sge_prev_close(symbol: str = "Au99.99") -> Optional[SgePrevClose]:
     return SgePrevClose(trade_date=last_date, close=last_close)
 
 
-def fetch_sge_daily_closes(symbol: str = "Au99.99") -> list:
-    """SGE 日线收盘价序列（时间升序），供详情页 周/月/半年/年 走势。"""
+def fetch_sge_daily_closes(symbol: str = "Au99.99") -> Tuple[List[str], List[float]]:
+    """SGE 日线（时间升序），返回 (日期标签, 收盘价) 两列。"""
     import akshare as ak
 
     df = ak.spot_hist_sge(symbol=symbol)
     if df is None or df.empty:
-        return []
+        return [], []
     date_col = _pick_column(df, ("date", "日期"))
     close_col = _pick_column(df, ("close", "收盘", "收盘价"))
     if date_col is None or close_col is None:
         logger.warning("unexpected sge hist columns: %s", list(df.columns))
-        return []
+        return [], []
     rows = []
     for d, c in zip(df[date_col], df[close_col]):
         c = float(c)
         if c > 0:
-            rows.append((str(d), c))
+            rows.append((str(d)[:10], c))
     rows.sort(key=lambda x: x[0])
-    return [c for _, c in rows]
+    labels = [d for d, _ in rows]
+    closes = [c for _, c in rows]
+    return labels, closes
 
 
 def fetch_gc_realtime() -> dict:
@@ -149,17 +151,24 @@ def fetch_gc_realtime() -> dict:
     }
 
 
-def fetch_gc_daily_closes(symbol: str = "GC") -> list:
-    """COMEX 黄金日线收盘序列（时间升序），供详情页走势。"""
+def fetch_gc_daily_closes(symbol: str = "GC") -> Tuple[List[str], List[float]]:
+    """COMEX 黄金日线（时间升序），返回 (日期标签, 收盘价) 两列。"""
     import akshare as ak
 
     df = ak.futures_foreign_hist(symbol=symbol)
     if df is None or df.empty:
-        return []
-    if "close" not in df.columns:
+        return [], []
+    if "close" not in df.columns or "date" not in df.columns:
         logger.warning("unexpected GC hist columns: %s", list(df.columns))
-        return []
-    return [float(c) for c in df["close"] if float(c) > 0]
+        return [], []
+    labels: List[str] = []
+    closes: List[float] = []
+    for d, c in zip(df["date"], df["close"]):
+        c = float(c)
+        if c > 0:
+            labels.append(str(d)[:10])
+            closes.append(c)
+    return labels, closes
 
 
 def current_sge_trade_session_open(now: Optional[datetime] = None) -> bool:

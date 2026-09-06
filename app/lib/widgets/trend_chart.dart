@@ -5,13 +5,32 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// 详情页走势图：折线 + 渐变填充 + 左侧价格刻度 + 可拖动十字虚线（AGENTS.md 第 55 节的克制的增强）。
-/// 无时间轴：数据为收盘价序列，十字线查看的是选中点的价格。
+/// 根据价格区间选择刻度小数位数（公开供测试）。
+int trendDecimalsFor(List<double> points) {
+  final minP = points.reduce((a, b) => a < b ? a : b);
+  final maxP = points.reduce((a, b) => a > b ? a : b);
+  final range = (maxP - minP).abs();
+  if (range >= 1000) return 0;
+  if (range >= 100) return 1;
+  return 2;
+}
+
+String trendLabelFor(List<double> points, double v) =>
+    v.toStringAsFixed(trendDecimalsFor(points));
+
+/// 详情页走势图：折线 + 渐变填充 + 左侧价格刻度 + 可拖动十字虚线。
+/// 拖动查看某天的价格：虚线顶端显示日期，选中点旁浮出价格气泡；松手即隐藏。
 class TrendChart extends StatefulWidget {
   final List<double> points;
+  final List<String> labels;
   final Color color;
 
-  const TrendChart({super.key, required this.points, required this.color});
+  const TrendChart({
+    super.key,
+    required this.points,
+    this.labels = const [],
+    required this.color,
+  });
 
   @override
   State<TrendChart> createState() => _TrendChartState();
@@ -29,6 +48,10 @@ class _TrendChartState extends State<TrendChart> {
     if (idx != _selectedIndex) setState(() => _selectedIndex = idx);
   }
 
+  void _hide() {
+    if (_selectedIndex != null) setState(() => _selectedIndex = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final points = widget.points;
@@ -41,9 +64,15 @@ class _TrendChartState extends State<TrendChart> {
           onTapDown: (d) => _select(d.localPosition, width, points.length),
           onPanStart: (d) => _select(d.localPosition, width, points.length),
           onPanUpdate: (d) => _select(d.localPosition, width, points.length),
+          // 松手即隐藏十字线
+          onTapUp: (_) => _hide(),
+          onTapCancel: _hide,
+          onPanEnd: (_) => _hide(),
+          onPanCancel: _hide,
           child: CustomPaint(
             painter: _TrendPainter(
               points: points,
+              labels: widget.labels,
               color: widget.color,
               selectedIndex: _selectedIndex,
               labelWidth: _labelWidth,
@@ -56,33 +85,22 @@ class _TrendChartState extends State<TrendChart> {
   }
 }
 
-/// 根据价格区间选择刻度小数位数（公开供测试）。
-int trendDecimalsFor(List<double> points) {
-  final minP = points.reduce((a, b) => a < b ? a : b);
-  final maxP = points.reduce((a, b) => a > b ? a : b);
-  final range = (maxP - minP).abs();
-  if (range >= 1000) return 0;
-  if (range >= 100) return 1;
-  return 2;
-}
-
-String trendLabelFor(List<double> points, double v) =>
-    v.toStringAsFixed(trendDecimalsFor(points));
-
 class _TrendPainter extends CustomPainter {
   final List<double> points;
+  final List<String> labels;
   final Color color;
   final int? selectedIndex;
   final double labelWidth;
 
   _TrendPainter({
     required this.points,
+    required this.labels,
     required this.color,
     required this.selectedIndex,
     required this.labelWidth,
   });
 
-  static const double _padV = 0.10;
+  static const double _padV = 0.12;
 
   String _label(double v) => trendLabelFor(points, v);
 
@@ -116,14 +134,8 @@ class _TrendPainter extends CustomPainter {
     for (final t in <double>[0, 0.5, 1]) {
       final value = minP + range * t;
       final y = top + chartH - chartH * t;
-      _drawDashedLine(
-        canvas,
-        Offset(chartLeft, y),
-        Offset(size.width, y),
-        AppColors.divider,
-        1,
-        const [3, 4],
-      );
+      _drawDashedLine(canvas, Offset(chartLeft, y), Offset(size.width, y),
+          AppColors.divider, 1, const [3, 4]);
       final tp = TextPainter(
         text: TextSpan(text: _label(value), style: labelStyle),
         textDirection: TextDirection.ltr,
@@ -158,43 +170,55 @@ class _TrendPainter extends CustomPainter {
       ..isAntiAlias = true;
     canvas.drawPath(line, linePaint);
 
-    // ---- 十字虚线 ----
+    // ---- 十字虚线（拖动中显示，松手即隐藏） ----
     final sel = selectedIndex;
-    if (sel != null && sel >= 0 && sel < points.length) {
-      final p = _pos(sel, chartLeft, chartW, top, chartH);
-      _drawDashedLine(canvas, Offset(p.dx, top), Offset(p.dx, top + chartH), AppColors.textSecondary, 1, const [5, 4]);
-      _drawDashedLine(canvas, Offset(chartLeft, p.dy), Offset(size.width, p.dy), AppColors.textSecondary, 1, const [5, 4]);
+    if (sel == null || sel < 0 || sel >= points.length) return;
+    final p = _pos(sel, chartLeft, chartW, top, chartH);
+    _drawDashedLine(canvas, Offset(p.dx, top), Offset(p.dx, top + chartH),
+        AppColors.textSecondary, 1, const [5, 4]);
+    _drawDashedLine(canvas, Offset(chartLeft, p.dy), Offset(size.width, p.dy),
+        AppColors.textSecondary, 1, const [5, 4]);
 
-      // 选中点：白边圆点
-      canvas.drawCircle(p, 5.5, Paint()..color = AppColors.surface);
-      canvas.drawCircle(p, 4, Paint()..color = color);
+    // 选中点：白边圆点
+    canvas.drawCircle(p, 5.5, Paint()..color = AppColors.surface);
+    canvas.drawCircle(p, 4, Paint()..color = color);
 
-      // 价格气泡
-      final text = _label(points[sel]);
-      final tp = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      const padH = 8.0, padV = 5.0;
-      final bubbleW = tp.width + padH * 2;
-      final bubbleH = tp.height + padV * 2;
-      var bx = p.dx - bubbleW / 2;
-      bx = bx.clamp(chartLeft, size.width - bubbleW);
-      final by = p.dy - bubbleH - 10 < 0 ? p.dy + 10 : p.dy - bubbleH - 10;
-      final bubbleRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(bx, by, bubbleW, bubbleH),
-        const Radius.circular(8),
-      );
-      canvas.drawRRect(bubbleRect, Paint()..color = AppColors.surfaceDark);
-      tp.paint(canvas, Offset(bx + padH, by + padV));
+    // ---- 虚线顶端日期标签 ----
+    final date = (sel < labels.length) ? labels[sel] : null;
+    if (date != null && date.isNotEmpty) {
+      _drawPill(canvas, date, p.dx, top + 4, AppColors.surfaceDark,
+          minLeft: chartLeft + 2, maxRight: size.width - 2);
     }
+
+    // ---- 价格气泡 ----
+    _drawPill(canvas, _label(points[sel]), p.dx, p.dy - 34, AppColors.surfaceDark,
+        minLeft: chartLeft + 2, maxRight: size.width - 2);
+  }
+
+  void _drawPill(Canvas canvas, String text, double cx, double cy, Color bg,
+      {required double minLeft, required double maxRight}) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    const padH = 7.0, padV = 4.0;
+    final w = tp.width + padH * 2;
+    final h = tp.height + padV * 2;
+    var x = cx - w / 2;
+    x = x.clamp(minLeft, math.max(minLeft, maxRight - w));
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(x, cy, w, h),
+      const Radius.circular(7),
+    );
+    canvas.drawRRect(rect, Paint()..color = bg.withValues(alpha: 0.95));
+    tp.paint(canvas, Offset(x + padH, cy + padV));
   }
 
   void _drawDashedLine(Canvas canvas, Offset start, Offset end, Color color,

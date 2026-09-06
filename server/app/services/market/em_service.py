@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import requests
 
@@ -74,8 +74,8 @@ def fetch_global_indices() -> Dict[str, dict]:
     return result
 
 
-def fetch_kline_closes(secid: str, klt: int, lmt: int) -> List[float]:
-    """东财 K 线收盘序列（时间升序）。klt: 5/30=分钟, 101=日线。"""
+def fetch_kline(secid: str, klt: int, lmt: int) -> Tuple[List[str], List[float]]:
+    """东财 K 线（时间升序），返回 (日期标签, 收盘价) 两列。klt: 5/30=分钟, 101=日线。"""
     params = {
         "secid": secid, "klt": str(klt), "fqt": "0",
         "lmt": str(lmt), "end": "20500101",
@@ -83,7 +83,14 @@ def fetch_kline_closes(secid: str, klt: int, lmt: int) -> List[float]:
     }
     data = _get(KLINE_URL, params).get("data") or {}
     klines = data.get("klines") or []
-    closes = [float(x.split(",")[1]) for x in klines]
+    labels: List[str] = []
+    closes: List[float] = []
+    for x in klines:
+        parts = x.split(",")
+        label = parts[0][:16].strip()  # "2026-09-05 14:30" 或 "2026-09-05"
+        close = float(parts[1])
+        labels.append(label)
+        closes.append(close)
     if not closes:
         raise EastmoneyError(f"empty klines for {secid} klt={klt}")
-    return closes
+    return labels, closes

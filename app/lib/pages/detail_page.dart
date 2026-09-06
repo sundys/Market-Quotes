@@ -121,7 +121,11 @@ class _DetailPageState extends State<DetailPage> {
                         children: [
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: TrendChart(points: _history!.points, color: accent),
+                            child: TrendChart(
+                              points: _history!.points,
+                              labels: _history!.labels,
+                              color: accent,
+                            ),
                           ),
                           if (_history!.isStale)
                             const Padding(

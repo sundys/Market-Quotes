@@ -146,7 +146,7 @@ class MarketService:
             logger.warning("drop invalid sge quote: %s", quote.to_dict())
             return
         self.cache.set_quote("gold_cn", quote.to_dict())
-        self.cache.append_sge_point(price)
+        self.cache.append_sge_point(price, ts.strftime("%m-%d %H:%M"))
         self.cache.mark_success("sge")
 
     # ---- stale 标记 ----
@@ -172,13 +172,13 @@ class MarketService:
         from app.services.market.history_service import history_service
 
         if quote_id == "gold_cn":
-            return history_service.sge_history(period, self.cache.get_sge_sparkline(), self.sge_lock)
+            return history_service.sge_history(period, self.cache.get_sge_samples(), self.sge_lock)
         if quote_id == "gold_global":
             return history_service.gc_history(period, self.gc_lock)
         if quote_id in ("nasdaq100", "sp500", "dowjones"):
             secid = SYMBOLS[quote_id][1]
             return history_service.index_history(quote_id, secid, period, self.em_lock)
-        return {"id": quote_id, "period": period, "points": [], "count": 0,
+        return {"id": quote_id, "period": period, "points": [], "labels": [], "count": 0,
                 "is_stale": True, "server_time": time.time()}
 
     # ---- 读取（API 路由调用，只返回缓存） ----

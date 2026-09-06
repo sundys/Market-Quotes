@@ -103,17 +103,19 @@ class MarketOverview {
   }
 }
 
-/// GET /api/market/{id}/history 的响应模型：收盘价序列（走势图无坐标轴）。
+/// GET /api/market/{id}/history 的响应模型：收盘价序列 + 对应日期标签。
 class MarketHistory {
   final String id;
   final String period;
   final List<double> points;
+  final List<String> labels;
   final bool isStale;
 
   const MarketHistory({
     required this.id,
     required this.period,
     required this.points,
+    required this.labels,
     required this.isStale,
   });
 
@@ -123,6 +125,9 @@ class MarketHistory {
       period: json['period'] as String? ?? '',
       points: ((json['points'] as List?) ?? const [])
           .map((e) => (e as num).toDouble())
+          .toList(),
+      labels: ((json['labels'] as List?) ?? const [])
+          .map((e) => e as String)
           .toList(),
       isStale: json['is_stale'] as bool? ?? false,
     );

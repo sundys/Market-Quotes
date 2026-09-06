@@ -10,7 +10,7 @@ import tempfile
 import threading
 import time
 from collections import deque
-from typing import Deque, Dict, List, Optional
+from typing import Deque, Dict, List, Optional, Tuple
 
 
 class CacheService:
@@ -19,8 +19,8 @@ class CacheService:
         self._data_dir = data_dir
         self._quotes: Dict[str, dict] = {}
         self._previous_close: Dict[str, Optional[float]] = {}
-        # SGE 实时接口只给现价，日内走势靠采集器逐点累积（AGENTS.md 第 12/55 节）
-        self._sge_sparkline: Deque[float] = deque(maxlen=80)
+        # SGE 实时接口只给现价，日内走势靠采集器逐点累积（含时间标签，AGENTS.md 第 12/55 节）
+        self._sge_samples: Deque[Tuple[float, str]] = deque(maxlen=80)
         self._snapshot_file = os.path.join(data_dir, "market_cache.json")
         self.stats = {
             "cache_hits": 0,
@@ -53,21 +53,28 @@ class CacheService:
             self.stats["cache_hits"] += 1
             return dict(payload)
 
-    def append_sge_point(self, price: float) -> None:
+    def append_sge_point(self, price: float, ts_label: str) -> None:
         with self._lock:
-            self._sge_sparkline.append(round(price, 2))
-            self._quotes.setdefault("gold_cn", {})["sparkline"] = list(self._sge_sparkline)
+            self._sge_samples.append((round(price, 2), ts_label))
+            self._quotes.setdefault("gold_cn", {})["sparkline"] = [p for p, _ in self._sge_samples]
 
     def get_sge_sparkline(self) -> List[float]:
         with self._lock:
-            return list(self._sge_sparkline)
+            return [p for p, _ in self._sge_samples]
 
-    def set_sge_sparkline(self, points: List[float]) -> None:
+    def get_sge_samples(self) -> List[Tuple[float, str]]:
         with self._lock:
-            self._sge_sparkline.clear()
-            self._sge_sparkline.extend(points[-80:])
-            if "gold_cn" in self._quotes:
-                self._quotes["gold_cn"]["sparkline"] = list(self._sge_sparkline)
+            return list(self._sge_samples)
+
+    def _set_sge_samples(self, samples: List) -> None:
+        with self._lock:
+            self._sge_samples.clear()
+            for item in samples:
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    self._sge_samples.append((float(item[0]), str(item[1])))
+                else:
+                    # 旧格式：只有价格，无时间标签
+                    self._sge_samples.append((float(item), ""))
 
     def mark_success(self, source: str) -> None:
         with self._lock:
@@ -83,7 +90,7 @@ class CacheService:
             snapshot = {
                 "quotes": self._quotes,
                 "previous_close": self._previous_close,
-                "sge_sparkline": list(self._sge_sparkline),
+                "sge_samples": [list(s) for s in self._sge_samples],
                 "saved_at": time.time(),
             }
         try:
@@ -103,4 +110,6 @@ class CacheService:
             return
         self._quotes = snapshot.get("quotes", {})
         self._previous_close = snapshot.get("previous_close", {})
-        self.set_sge_sparkline(snapshot.get("sge_sparkline", []))
+        # 新格式 sge_samples（带时间标签）；兼容旧格式 sge_sparkline（仅价格）
+        samples = snapshot.get("sge_samples") or snapshot.get("sge_sparkline") or []
+        self._set_sge_samples(samples)
