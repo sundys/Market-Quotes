@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:market_quotes/models/market_quote.dart';
 import 'package:market_quotes/services/api_client.dart';
 import 'package:market_quotes/services/market_repository.dart';
+import 'package:market_quotes/services/update_service.dart';
 import 'package:market_quotes/services/settings_service.dart';
 import 'package:market_quotes/theme/app_colors.dart';
 import 'package:market_quotes/widgets/gold_hero_card.dart';
@@ -162,6 +163,20 @@ void main() {
     expect(trendLabelFor([100.0, 110.0], 110.0), '110.00'); // 小区间 2 位小数
     expect(trendLabelFor([0.0, 150.0], 75.0), '75.0'); // 中区间 1 位小数
     expect(trendLabelFor([20000.0, 27000.0], 26506.99), '26507'); // 大区间整数
+  });
+
+  test('update version comparison', () {
+    expect(UpdateService.compareVersions('1.1.3', '1.1.2'), greaterThan(0));
+    expect(UpdateService.compareVersions('v1.1.3', '1.1.10'), lessThan(0)); // 逐段数字比较
+    expect(UpdateService.compareVersions('1.1.2', '1.1.2'), 0);
+    expect(UpdateService.compareVersions('1.2', '1.1.9'), greaterThan(0));
+  });
+
+  test('update asset selection by abi', () {
+    expect(UpdateService.assetForAbis(['arm64-v8a', 'armeabi-v7a']),
+        'app-arm64-v8a-release.apk');
+    expect(UpdateService.assetForAbis(['armeabi-v7a']),
+        'app-armeabi-v7a-release.apk');
   });
 
   testWidgets('index card falls back to placeholder without data', (tester) async {

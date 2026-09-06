@@ -6,6 +6,7 @@ import 'pages/settings_page.dart';
 import 'services/api_client.dart';
 import 'services/market_repository.dart';
 import 'services/settings_service.dart';
+import 'services/update_service.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -13,14 +14,24 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final settings = SettingsService(prefs);
   final repository = MarketRepository(apiClient: ApiClient(), prefs: prefs, settings: settings);
-  runApp(MarketQuotesApp(settings: settings, repository: repository));
+  runApp(MarketQuotesApp(
+    settings: settings,
+    repository: repository,
+    updateService: UpdateService(),
+  ));
 }
 
 class MarketQuotesApp extends StatelessWidget {
   final SettingsService settings;
   final MarketRepository repository;
+  final UpdateService updateService;
 
-  const MarketQuotesApp({super.key, required this.settings, required this.repository});
+  const MarketQuotesApp({
+    super.key,
+    required this.settings,
+    required this.repository,
+    required this.updateService,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -29,8 +40,9 @@ class MarketQuotesApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       routes: {
-        '/': (context) => HomePage(repository: repository, settings: settings),
-        '/settings': (context) => SettingsPage(settings: settings),
+        '/': (context) =>
+            HomePage(repository: repository, settings: settings),
+        '/settings': (context) => SettingsPage(settings: settings, updateService: updateService),
       },
       initialRoute: '/',
     );
