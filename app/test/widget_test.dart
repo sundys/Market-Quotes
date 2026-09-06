@@ -11,6 +11,7 @@ import 'package:market_quotes/services/settings_service.dart';
 import 'package:market_quotes/theme/app_colors.dart';
 import 'package:market_quotes/widgets/gold_hero_card.dart';
 import 'package:market_quotes/widgets/index_card.dart';
+import 'package:market_quotes/widgets/trend_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const String fakeOverviewJson = '''
@@ -136,6 +137,31 @@ void main() {
     expect(find.text('上海黄金 Au99.99'), findsOneWidget);
     expect(find.text('上海黄金交易所 · ¥ / 克'), findsOneWidget);
     expect(find.text('¥958.00'), findsOneWidget);
+  });
+
+  testWidgets('trend chart builds and tap interaction works', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: TrendChart(points: [100.0, 105.0, 103.0, 110.0], color: AppColors.positive),
+          ),
+        ),
+      ),
+    );
+    // 点击/拖动选择十字线位置，不应抛异常
+    await tester.tap(find.byType(TrendChart));
+    await tester.pump();
+    final gesture = await tester.startGesture(tester.getCenter(find.byType(TrendChart)));
+    await gesture.moveBy(const Offset(60, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  test('trend label formatting by range', () {
+    expect(trendLabelFor([100.0, 110.0], 110.0), '110.00'); // 小区间 2 位小数
+    expect(trendLabelFor([0.0, 150.0], 75.0), '75.0'); // 中区间 1 位小数
+    expect(trendLabelFor([20000.0, 27000.0], 26506.99), '26507'); // 大区间整数
   });
 
   testWidgets('index card falls back to placeholder without data', (tester) async {
