@@ -50,7 +50,7 @@ class ApiClient {
     required String baseUrl,
     required String quoteId,
     required String period,
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 20),
   }) async {
     if (baseUrl.trim().isEmpty) {
       throw ApiException('未配置后端地址');

@@ -22,7 +22,19 @@ HEADERS = {
 LIST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
 KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 
-# 三大美股指数的东财市场代码
+# 东财存在多个编号镜像节点，单节点会间歇性断连；失败自动轮换 host 重试
+_LIST_HOSTS = [
+    "push2.eastmoney.com",
+    "23.push2.eastmoney.com",
+    "64.push2.eastmoney.com",
+    "push2delay.eastmoney.com",
+]
+_KLINE_HOSTS = [
+    "push2his.eastmoney.com",
+    "23.push2his.eastmoney.com",
+    "64.push2his.eastmoney.com",
+]
+
 INDEX_SECIDS = {"nasdaq100": "100.NDX", "sp500": "100.SPX", "dowjones": "100.DJIA"}
 GOLD_SECID = "101.GC00Y"  # COMEX 黄金主力连续
 
@@ -31,13 +43,19 @@ class EastmoneyError(Exception):
     """东财接口失败（连接断开/数据缺失）。"""
 
 
-def _get(url: str, params: dict, timeout: int = 10) -> dict:
-    try:
-        r = requests.get(url, params=params, headers=HEADERS, timeout=timeout)
-        r.raise_for_status()
-        return r.json()
-    except Exception as exc:  # noqa: BLE001
-        raise EastmoneyError(f"{exc}") from exc
+def _get_hosts(path: str, params: dict, hosts: List[str], timeout: int = 6) -> dict:
+    """依次尝试多个东财节点，任一成功即返回；全部失败抛 EastmoneyError。"""
+    last: Optional[Exception] = None
+    for host in hosts:
+        try:
+            r = requests.get(f"https://{host}{path}", params=params, headers=HEADERS,
+                             timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            continue
+    raise EastmoneyError(str(last))
 
 
 def fetch_global_indices() -> Dict[str, dict]:
@@ -53,7 +71,7 @@ def fetch_global_indices() -> Dict[str, dict]:
         "fid": "f3", "pn": "1", "pz": "10", "po": "1", "dect": "1",
         "wbp2u": "|0|0|0|web",
     }
-    data = _get(LIST_URL, params).get("data") or {}
+    data = _get_hosts("/api/qt/clist/get", params, _LIST_HOSTS).get("data") or {}
     diff = (data.get("diff") or {})
     by_code = {v.get("f12"): v for v in diff.values()} if isinstance(diff, dict) else {}
     result: Dict[str, dict] = {}
@@ -81,7 +99,7 @@ def fetch_kline(secid: str, klt: int, lmt: int) -> Tuple[List[str], List[float]]
         "lmt": str(lmt), "end": "20500101",
         "fields1": "f1,f2,f3", "fields2": "f51,f53",
     }
-    data = _get(KLINE_URL, params).get("data") or {}
+    data = _get_hosts("/api/qt/stock/kline/get", params, _KLINE_HOSTS).get("data") or {}
     klines = data.get("klines") or []
     labels: List[str] = []
     closes: List[float] = []

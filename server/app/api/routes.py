@@ -28,15 +28,20 @@ def market_overview():
 
 
 @router.get("/market/{quote_id}/history")
-def market_history(quote_id: str, period: str = "1m"):
-    """详情页历史走势：period ∈ 1d/1w/1m/6m/1y（读缓存，失败返回最近缓存并标 stale）。"""
+async def market_history(quote_id: str, period: str = "1m"):
+    """详情页历史走势：period ∈ 1d/1w/1m/6m/1y（读缓存，失败返回最近缓存并标 stale）。
+
+    历史抓取可能等待数据源锁/网络，放到线程执行，避免阻塞事件循环拖垮其它请求。
+    """
+    import asyncio
+
     from fastapi import HTTPException
 
     from app.services.market.history_service import PERIODS
 
     if period not in PERIODS:
         raise HTTPException(status_code=400, detail=f"period must be one of {PERIODS}")
-    return get_service().history(quote_id, period)
+    return await asyncio.to_thread(get_service().history, quote_id, period)
 
 
 @root_router.get("/health")

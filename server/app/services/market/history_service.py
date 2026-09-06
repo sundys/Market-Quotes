@@ -62,6 +62,15 @@ class HistoryService:
             return cached[1], cached[2]
         return None
 
+    @staticmethod
+    def _acquire(lock, timeout: float = 10.0) -> bool:
+        """限时获取数据源锁；拿不到说明采集线程正在抓取/挂起，调用方应走缓存快速返回。
+
+        注意：历史接口运行在线程池中，绝不能无限等待数据源锁，
+        否则锁被采集线程占用时会拖垮请求。
+        """
+        return lock.acquire(timeout=timeout)
+
     def _store(self, key: str, period: str, labels: List[str], points: List[float]) -> None:
         self._cache[(key, period)] = (time.time(), labels, points)
 
@@ -85,15 +94,18 @@ class HistoryService:
         cached = self._cached_or(cache_key, period)
         if cached is not None:
             return self._result(quote_id, period, cached[0], cached[1], stale=False)
+        if not self._acquire(lock):
+            return self._result(quote_id, period, [], [], stale=True)
         try:
-            with lock:
-                labels, points = em_service.fetch_kline(secid, klt, lmt)
+            labels, points = em_service.fetch_kline(secid, klt, lmt)
         except Exception as exc:  # noqa: BLE001
             logger.warning("em history %s %s failed: %s", secid, period, exc)
             stale_cache = self._cache.get((cache_key, period))
             if stale_cache is not None:
                 return self._result(quote_id, period, stale_cache[1], stale_cache[2], stale=True)
             return self._result(quote_id, period, [], [], stale=True)
+        finally:
+            lock.release()
         labels, points = _sanitize_pairs(list(zip(labels, points)))
         self._store(cache_key, period, labels, points)
         return self._result(quote_id, period, labels, points, stale=False)
@@ -110,12 +122,15 @@ class HistoryService:
         if cached is not None:
             labels, points = cached
         else:
+            if not self._acquire(lock):
+                return self._result("gold_global", period, [], [], stale=True)
             try:
-                with lock:
-                    labels, points = akshare_service.fetch_gc_daily_closes()
+                labels, points = akshare_service.fetch_gc_daily_closes()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("gc daily history failed: %s", exc)
                 labels, points = [], []
+            finally:
+                lock.release()
             if points:
                 labels, points = _sanitize_pairs(list(zip(labels, points)))
                 self._store(cache_key, "1y", labels, points)
@@ -138,21 +153,28 @@ class HistoryService:
 
         today = time.time() // 86400
         if self._sge_daily is None or self._sge_daily[0] != today:
-            try:
-                with lock:
-                    labels, points = akshare_service.fetch_sge_daily_closes()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("sge daily history failed: %s", exc)
-                labels, points = [], []
-            if points:
-                labels, points = _sanitize_pairs(list(zip(labels, points)))
-                self._sge_daily = (today, list(zip(labels, points)))
-            elif self._sge_daily is not None:
-                labels, points = zip(*self._sge_daily[1])
-                labels, points = list(labels), list(points)
+            if not self._acquire(lock):
+                # 锁被占用：先用内存兜底，避免拖垮请求
+                if self._sge_daily is not None:
+                    self._sge_daily = (self._sge_daily[0], list(self._sge_daily[1]))
+                else:
+                    return self._result(quote_id, period, [], [], stale=True)
             else:
-                return self._result(quote_id, period, [], [], stale=True)
+                try:
+                    labels, points = akshare_service.fetch_sge_daily_closes()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("sge daily history failed: %s", exc)
+                    labels, points = [], []
+                finally:
+                    lock.release()
+                if points:
+                    labels, points = _sanitize_pairs(list(zip(labels, points)))
+                    self._sge_daily = (today, list(zip(labels, points)))
 
+        # 切片统一从权威内存取，避免缓存命中路径变量未定义
+        pairs = self._sge_daily[1]
+        labels = [lb for lb, _ in pairs]
+        points = [p for _, p in pairs]
         return self._result(quote_id, period,
                             labels[-_DAILY_SLICE[period]:], points[-_DAILY_SLICE[period]:],
                             stale=False)

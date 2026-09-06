@@ -101,6 +101,33 @@ def test_sge_history_slices_daily_with_labels(monkeypatch):
     assert r_week["labels"] == labels[-5:]
 
 
+def test_sge_history_same_day_repeat_does_not_crash(monkeypatch):
+    """回归：当日缓存命中路径不能因变量未定义而 500（线上曾导致中国黄金详情全挂）。"""
+    from app.services.market import akshare_service
+
+    hs = HistoryService()
+    labels = [f"d{i}" for i in range(200)]
+    closes = [float(i + 1) for i in range(200)]
+    monkeypatch.setattr(akshare_service, "fetch_sge_daily_closes",
+                        lambda: (labels, closes))
+    hs.sge_history("1w", [], threading.Lock())  # 建立当日缓存
+
+    # 当日缓存命中 + 数据源故障，仍必须返回切片数据
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(akshare_service, "fetch_sge_daily_closes", boom)
+    for period in ("1m", "6m", "1y", "1w"):
+        r = hs.sge_history(period, [], threading.Lock())
+        assert len(r["points"]) == len(r["labels"]) > 0
+        assert r["points"] == closes[-_slice_len(period):]
+        assert r["labels"] == labels[-_slice_len(period):]
+
+
+def _slice_len(period):
+    return {"1w": 5, "1m": 22, "6m": 130, "1y": 250}[period]
+
+
 def test_sge_intraday_uses_accumulated_samples():
     hs = HistoryService()
     samples = [(958.0, "09-05 10:00"), (959.2, "09-05 10:05")]
