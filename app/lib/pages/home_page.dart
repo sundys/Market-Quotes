@@ -297,45 +297,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// 指数：纳指与标普并排，道琼斯整宽；点击进详情。
+  /// 指数：三张全宽卡片（新格式含盘面明细），点击进详情。
   Widget _buildIndexRow() {
-    final ndx = _overview?.byId('nasdaq100');
-    final sp = _overview?.byId('sp500');
-    final dji = _overview?.byId('dowjones');
     return Column(
       children: [
-        LayoutBuilder(builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 360;
-          final cards = [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _openDetail('nasdaq100'),
-                child: IndexCard(quote: ndx),
-              ),
+        for (final entry in {
+          'nasdaq100': '纳斯达克100',
+          'sp500': '标普500',
+          'dowjones': '道琼斯',
+        }.entries) ...[
+          GestureDetector(
+            onTap: () => _openDetail(entry.key),
+            child: IndexCard(
+              quote: _overview?.byId(entry.key),
+              fallbackName: entry.value,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => _openDetail('sp500'),
-                child: IndexCard(quote: sp, fallbackName: '标普500'),
-              ),
-            ),
-          ];
-          if (wide) return Row(children: cards);
-          return Column(
-            children: [
-              GestureDetector(onTap: () => _openDetail('nasdaq100'), child: IndexCard(quote: ndx)),
-              const SizedBox(height: 12),
-              GestureDetector(
-                  onTap: () => _openDetail('sp500'), child: IndexCard(quote: sp, fallbackName: '标普500')),
-            ],
-          );
-        }),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => _openDetail('dowjones'),
-          child: IndexCard(quote: dji, fallbackName: '道琼斯'),
-        ),
+          ),
+          if (entry.key != 'dowjones') const SizedBox(height: 12),
+        ],
       ],
     );
   }
