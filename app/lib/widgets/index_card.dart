@@ -28,7 +28,9 @@ class IndexCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              // 名称占前两列，价格位于第三列，与下方"涨跌幅/成交量"列对齐
               Expanded(
+                flex: 2,
                 child: Text(
                   q?.name ?? fallbackName,
                   style: const TextStyle(
@@ -40,13 +42,14 @@ class IndexCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
-              AnimatedValueText(
-                value: formatPrice(q?.price, q?.currency ?? 'USD'),
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: AnimatedValueText(
+                  value: formatPrice(q?.price, q?.currency ?? 'USD'),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
