@@ -28,7 +28,7 @@ class IndexCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 名称占第一列；价格位于第二列，与下方"昨收/最低"列对齐
+              // 与下方两列统计相同的两等分网格：价格起点与"昨收/最低"列对齐
               Expanded(
                 child: Text(
                   q?.name ?? fallbackName,
@@ -42,16 +42,19 @@ class IndexCard extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: AnimatedValueText(
-                  value: formatPrice(q?.price, q?.currency ?? 'USD'),
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedValueText(
+                    value: formatPrice(q?.price, q?.currency ?? 'USD'),
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
-              const Expanded(child: SizedBox()),
             ],
           ),
           const SizedBox(height: 12),
