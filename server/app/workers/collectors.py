@@ -114,6 +114,20 @@ async def gc_collector(service: MarketService) -> None:
                 timeout=_fetch_timeout(), lock=service.gc_lock,
             )
             latency = int((time.perf_counter() - started) * 1000)
+
+            # 月线每小时刷新一次（首页国际黄金期货卡行情线，东财 COMEX 日线）
+            if time.time() - service.gc_monthly_ts > 3600:
+                try:
+                    _, closes = await run_fetch_guarded(
+                        em_service.fetch_kline, em_service.GOLD_SECID, 101, 22,
+                        timeout=_fetch_timeout(), lock=service.em_lock,
+                    )
+                    if closes:
+                        service.set_gc_monthly([float(c) for c in closes[-22:]])
+                        logger.info("gc monthly sparkline refreshed (%d pts)", len(closes[-22:]))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("gc monthly refresh failed: %s", exc)
+
             service.apply_gold_quote(snap)
             service.gc_health.on_success()
             _log_fetch("sina-gc", "GC", "ok", latency)

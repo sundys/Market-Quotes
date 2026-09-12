@@ -56,6 +56,7 @@ def test_index_failure_marks_stale_but_keeps_data(tmp_path):
 def test_gold_quote_labeled_as_futures(tmp_path):
     """COMEX 期金作为国际黄金数据源时，名称/来源必须明确标注期货（AGENTS.md 第 4.1 节）。"""
     svc = make_service(tmp_path)
+    svc.set_gc_monthly([4400.0, 4450.0, 4477.2])  # 月线就绪时作为卡片行情线
     svc.apply_gold_quote({"name": "COMEX黄金", "price": 4477.2,
                           "prev_settlement": 4520.3, "timestamp": datetime(2026, 9, 5, 12, 0)})
     item = svc.cache.get_quote("gold_global")
@@ -63,6 +64,7 @@ def test_gold_quote_labeled_as_futures(tmp_path):
     assert "期金" in item["source"]
     assert abs(item["change"] - (-43.1)) < 1e-9
     assert item["currency"] == "USD"
+    assert item["sparkline"] == [4400.0, 4450.0, 4477.2]
 
 
 def test_sge_change_uses_previous_close(tmp_path):

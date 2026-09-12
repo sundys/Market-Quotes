@@ -75,10 +75,17 @@ class MarketService:
         # 首页上海黄金卡的行情线：月线（最近 22 个交易日收盘），每小时刷新一次
         self.sge_monthly: list = []
         self.sge_monthly_ts: float = 0.0
+        # 首页国际黄金期货卡的行情线：COMEX 月线，每小时刷新一次
+        self.gc_monthly: list = []
+        self.gc_monthly_ts: float = 0.0
 
     def set_sge_monthly(self, points: list) -> None:
         self.sge_monthly = points
         self.sge_monthly_ts = time.time()
+
+    def set_gc_monthly(self, points: list) -> None:
+        self.gc_monthly = points
+        self.gc_monthly_ts = time.time()
 
     # ---- 写入（由后台采集器调用） ----
     def apply_index_quotes(self, quotes: dict) -> None:
@@ -128,7 +135,7 @@ class MarketService:
             timestamp=snap["timestamp"].replace(tzinfo=TZ_CN).isoformat(),
             market_status="open",
             is_stale=False,
-            sparkline=snap.get("sparkline", []),
+            sparkline=self.gc_monthly if len(self.gc_monthly) >= 2 else snap.get("sparkline", []),
             open=snap.get("open"),
             high=snap.get("high"),
             low=snap.get("low"),
