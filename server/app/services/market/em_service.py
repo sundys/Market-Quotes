@@ -35,6 +35,9 @@ _KLINE_HOSTS = [
     "64.push2his.eastmoney.com",
 ]
 
+# 东财网页端通用 token；部分节点对缺失 ut 的 kline 请求会返回 200+空数据
+_UT = "fa5fd1943c7b386f172d6893dbfba10b"
+
 INDEX_SECIDS = {"nasdaq100": "100.NDX", "sp500": "100.SPX", "dowjones": "100.DJIA"}
 GOLD_SECID = "101.GC00Y"  # COMEX 黄金主力连续
 
@@ -103,6 +106,7 @@ def fetch_kline(secid: str, klt: int, lmt: int) -> Tuple[List[str], List[float]]
         "secid": secid, "klt": str(klt), "fqt": "0",
         "lmt": str(lmt), "end": "20500101",
         "fields1": "f1,f2,f3", "fields2": "f51,f53",
+        "ut": _UT,
     }
     data = _get_hosts("/api/qt/stock/kline/get", params, _KLINE_HOSTS).get("data") or {}
     klines = data.get("klines") or []
