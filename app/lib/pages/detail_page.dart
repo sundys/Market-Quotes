@@ -131,19 +131,15 @@ class _DetailPageState extends State<DetailPage> {
               ),
               child: Column(
                 children: [
-                  _statRow3(
-                    '今开', formatPrice(q.open, q.currency),
-                    '最高', formatPrice(q.high, q.currency),
-                    '涨跌幅', formatPercent(q.changePercent),
-                    value3Color: changeColor(q.changePercent),
-                  ),
+                  _statRow('今开', formatPrice(q.open, q.currency),
+                      '最高', formatPrice(q.high, q.currency)),
                   const SizedBox(height: 10),
-                  _statRow3(
-                    _prevLabel(q), formatPrice(q.prevClose, q.currency),
-                    '最低', formatPrice(q.low, q.currency),
-                    '涨跌额', formatChange(q.change),
-                    value3Color: changeColor(q.changePercent),
-                  ),
+                  _statRow(_prevLabel(q), formatPrice(q.prevClose, q.currency),
+                      '最低', formatPrice(q.low, q.currency)),
+                  const SizedBox(height: 10),
+                  _statRow('涨跌幅', formatPercent(q.changePercent),
+                      '涨跌额', formatChange(q.change),
+                      valueColor: changeColor(q.changePercent)),
                 ],
               ),
             ),
@@ -215,41 +211,6 @@ class _DetailPageState extends State<DetailPage> {
   bool _isGold(MarketQuote q) => q.symbol == 'GC' || q.symbol == 'Au99.99';
 
   String _prevLabel(MarketQuote q) => q.symbol == 'GC' ? '昨结' : '昨收';
-
-  Widget _statRow3(String label1, String value1, String label2, String value2,
-      String label3, String value3, {Color? value3Color}) {
-    return Row(
-      children: [
-        Expanded(child: _cell(label1, value1)),
-        Expanded(child: _cell(label2, value2)),
-        Expanded(child: _cell(label3, value3, color: value3Color)),
-      ],
-    );
-  }
-
-  Widget _cell(String label, String value, {Color? color}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        Text('$label：',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
-        const SizedBox(width: 2),
-        Flexible(
-          child: Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: color ?? AppColors.textPrimary,
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _statRow(String label1, String value1, String label2, String value2,
       {Color? valueColor}) {

@@ -55,29 +55,28 @@ class IndexCard extends StatelessWidget {
           _statRow(
             '今开', formatPrice(q?.open, q?.currency ?? 'USD'),
             '昨收', formatPrice(q?.prevClose, q?.currency ?? 'USD'),
-            q != null && (q.changePercent ?? 0) < 0 ? '跌幅' : '涨跌幅',
-            formatPercent(q?.changePercent),
-            percent: q?.changePercent,
           ),
           const SizedBox(height: 8),
           _statRow(
             '最高', formatPrice(q?.high, q?.currency ?? 'USD'),
             '最低', formatPrice(q?.low, q?.currency ?? 'USD'),
+          ),
+          const SizedBox(height: 8),
+          _statRow(
+            q != null && (q.changePercent ?? 0) < 0 ? '跌幅' : '涨跌幅',
+            formatPercent(q?.changePercent),
             '成交量', formatVolume(q?.volume),
+            valueColor2: changeColor(q?.changePercent),
           ),
         ],
       ),
     );
   }
 
-  /// 三列数据行：标签与数值基线对齐，列宽均分保证纵向对齐。
-  Widget _statRow(
-    String label1, String value1,
-    String label2, String value2,
-    String label3, String value3, {
-    double? percent,
-  }) {
-    Widget cell(String label, String value, {Color? valueColor}) {
+  /// 两列数据行：标签与数值基线对齐，列宽各半。
+  Widget _statRow(String label1, String value1, String label2, String value2,
+      {Color? valueColor2}) {
+    Widget cell(String label, String value, {Color? color}) {
       return Expanded(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -90,13 +89,14 @@ class IndexCard extends StatelessWidget {
                 fontSize: 11.5,
               ),
             ),
+            const SizedBox(width: 2),
             Flexible(
               child: Text(
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: valueColor ?? AppColors.textPrimary,
+                  color: color ?? AppColors.textPrimary,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                 ),
@@ -111,8 +111,7 @@ class IndexCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         cell(label1, value1),
-        cell(label2, value2),
-        cell(label3, value3, valueColor: changeColor(percent)),
+        cell(label2, value2, color: valueColor2),
       ],
     );
   }
