@@ -75,7 +75,7 @@ class MarketService:
 
     # ---- 写入（由后台采集器调用） ----
     def apply_index_quotes(self, quotes: dict) -> None:
-        """应用美股指数实时快照：{quote_id: {name, price, prev_close, timestamp}}。"""
+        """应用美股指数实时快照：{quote_id: {name, price, prev_close, open, high, low, volume, timestamp}}。"""
         for quote_id, snap in quotes.items():
             name, _, currency, unit = SYMBOLS[quote_id]
             change, change_percent = compute_change(snap["price"], snap["prev_close"])
@@ -93,6 +93,11 @@ class MarketService:
                 market_status="open" if us_market_open() else "closed",
                 is_stale=False,
                 sparkline=snap.get("sparkline", []),
+                open=snap.get("open"),
+                high=snap.get("high"),
+                low=snap.get("low"),
+                prev_close=snap.get("prev_close"),
+                volume=snap.get("volume"),
             )
             if not quote.is_valid():
                 logger.warning("drop invalid index quote %s: %s", quote_id, quote.to_dict())

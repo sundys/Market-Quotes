@@ -300,8 +300,12 @@ class _SettingsPageState extends State<SettingsPage> {
             title: '数据来源',
             children: const [
               _InfoTile(
-                title: '国际黄金 / 纳斯达克100 / 标普500',
-                subtitle: 'Yahoo Finance · 数据有一定延迟，仅供参考',
+                title: '纳斯达克100 / 标普500 / 道琼斯',
+                subtitle: '东方财富 · 数据有一定延迟，仅供参考',
+              ),
+              _InfoTile(
+                title: '国际黄金（COMEX 期金）',
+                subtitle: '新浪财经外盘行情 · 与伦敦现货存在价差',
               ),
               _InfoTile(
                 title: '上海黄金 Au99.99',

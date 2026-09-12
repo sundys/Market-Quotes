@@ -30,3 +30,12 @@ const List<String> _weekdays = ['周一', '周二', '周三', '周四', '周五'
 
 String formatDate(DateTime dt) =>
     '${dt.year}年${dt.month}月${dt.day}日 ${_weekdays[dt.weekday - 1]}';
+
+/// 成交量格式化：≥1亿显示"亿"，≥1万显示"万"（如 11.7亿 / 354.5万）。
+String formatVolume(double? volume) {
+  if (volume == null) return '--';
+  final abs = volume.abs();
+  if (abs >= 1e8) return '${(volume / 1e8).toStringAsFixed(1)}亿';
+  if (abs >= 1e4) return '${(volume / 1e4).toStringAsFixed(1)}万';
+  return _priceFmt.format(volume);
+}

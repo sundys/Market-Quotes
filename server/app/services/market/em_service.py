@@ -67,7 +67,7 @@ def fetch_global_indices() -> Dict[str, dict]:
     params = {
         "np": "2", "fltt": "1", "invt": "2",
         "fs": ",".join(f"i:{secid}" for secid in INDEX_SECIDS.values()),
-        "fields": "f12,f14,f2,f3,f4,f18,f124",
+        "fields": "f12,f14,f2,f3,f4,f5,f15,f16,f17,f18,f124",
         "fid": "f3", "pn": "1", "pz": "10", "po": "1", "dect": "1",
         "wbp2u": "|0|0|0|web",
     }
@@ -85,6 +85,11 @@ def fetch_global_indices() -> Dict[str, dict]:
             "name": row.get("f14"),
             "price": float(row["f2"]) / 100.0,
             "prev_close": float(row["f18"]) / 100.0,
+            "open": float(row["f17"]) / 100.0,
+            "high": float(row["f15"]) / 100.0,
+            "low": float(row["f16"]) / 100.0,
+            # 成交量原始值（股/手），由 App 端格式化为亿/万
+            "volume": float(row["f5"]) if row.get("f5") not in ("-", None) else None,
             "timestamp": datetime.fromtimestamp(int(ts_raw)),
         }
     if not result:

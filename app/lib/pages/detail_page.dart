@@ -94,6 +94,33 @@ class _DetailPageState extends State<DetailPage> {
               ],
             ),
           ),
+          if (_isIndex(q) && q.open != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Column(
+                children: [
+                  _statRow('今开', formatPrice(q.open, q.currency),
+                      '昨收', formatPrice(q.prevClose, q.currency)),
+                  const SizedBox(height: 10),
+                  _statRow('最高', formatPrice(q.high, q.currency),
+                      '最低', formatPrice(q.low, q.currency)),
+                  const SizedBox(height: 10),
+                  _statRow(
+                    q.changePercent != null && q.changePercent! < 0 ? '跌幅' : '涨幅',
+                    formatPercent(q.changePercent),
+                    '成交量',
+                    formatVolume(q.volume),
+                    valueColor: changeColor(q.changePercent),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.fromLTRB(8, 20, 8, 8),
@@ -153,6 +180,47 @@ class _DetailPageState extends State<DetailPage> {
           ),
         ],
       ),
+    );
+  }
+
+  bool _isIndex(MarketQuote q) => q.symbol.startsWith('100.');
+
+  Widget _statRow(String label1, String value1, String label2, String value2,
+      {Color? valueColor}) {
+    final valueStyle = TextStyle(
+      color: valueColor ?? AppColors.textPrimary,
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+    );
+    return Row(
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('$label1：',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 13)),
+              const SizedBox(width: 2),
+              Text(value1, style: valueStyle),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('$label2：',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 13)),
+              const SizedBox(width: 2),
+              Text(value2, style: valueStyle),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

@@ -13,6 +13,12 @@ class MarketQuote {
   final String marketStatus;
   final bool isStale;
   final List<double> sparkline;
+  // 盘面明细（指数详情页展示；无数据的源为 null）
+  final double? open;
+  final double? high;
+  final double? low;
+  final double? prevClose;
+  final double? volume;
 
   const MarketQuote({
     required this.id,
@@ -28,6 +34,11 @@ class MarketQuote {
     required this.marketStatus,
     required this.isStale,
     this.sparkline = const [],
+    this.open,
+    this.high,
+    this.low,
+    this.prevClose,
+    this.volume,
   });
 
   factory MarketQuote.fromJson(Map<String, dynamic> json) {
@@ -47,6 +58,11 @@ class MarketQuote {
       sparkline: ((json['sparkline'] as List?) ?? const [])
           .map((e) => (e as num).toDouble())
           .toList(),
+      open: (json['open'] as num?)?.toDouble(),
+      high: (json['high'] as num?)?.toDouble(),
+      low: (json['low'] as num?)?.toDouble(),
+      prevClose: (json['prev_close'] as num?)?.toDouble(),
+      volume: (json['volume'] as num?)?.toDouble(),
     );
   }
 

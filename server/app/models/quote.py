@@ -30,6 +30,12 @@ class MarketQuote:
     market_status: str = "unknown"
     is_stale: bool = False
     sparkline: List[float] = field(default_factory=list)
+    # 盘面明细（指数详情页展示；无数据的源为 None）
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    prev_close: Optional[float] = None
+    volume: Optional[float] = None
 
     def is_valid(self) -> bool:
         """数据质量检查（AGENTS.md 第 22 节）。"""
