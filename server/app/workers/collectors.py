@@ -172,6 +172,19 @@ async def sge_collector(service: MarketService) -> None:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("sge prev_close fetch failed: %s", exc)
 
+            # 月线每小时刷新一次（首页上海黄金卡行情线）；未到期直接复用
+            if time.time() - service.sge_monthly_ts > 3600:
+                try:
+                    labels, closes = await run_fetch_guarded(
+                        akshare_service.fetch_sge_daily_closes,
+                        timeout=_fetch_timeout(), lock=service.sge_lock,
+                    )
+                    if closes:
+                        service.set_sge_monthly([float(c) for c in closes[-22:]])
+                        logger.info("sge monthly sparkline refreshed (%d pts)", len(closes[-22:]))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("sge monthly refresh failed: %s", exc)
+
             service.apply_sge(snap)
             service.sge_health.on_success()
             _log_fetch("akshare-sge", "Au99.99", "ok", latency)

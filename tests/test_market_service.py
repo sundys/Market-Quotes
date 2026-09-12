@@ -68,6 +68,7 @@ def test_gold_quote_labeled_as_futures(tmp_path):
 def test_sge_change_uses_previous_close(tmp_path):
     svc = make_service(tmp_path)
     svc.cache.set_previous_close("Au99.99", 752.70)
+    svc.set_sge_monthly([740.0, 745.0, 750.0, 755.0])  # 月线就绪时优先于当日采样
     svc.apply_sge({"price": 755.0, "timestamp": datetime(2026, 9, 5, 12, 0),
                    "open": 753.0, "high": 756.0, "low": 751.0})
     item = svc.cache.get_quote("gold_cn")
@@ -75,7 +76,7 @@ def test_sge_change_uses_previous_close(tmp_path):
     assert item["unit"] == "g"
     assert abs(item["change"] - 2.30) < 1e-9
     assert abs(item["change_percent"] - (2.30 / 752.70 * 100)) < 1e-9
-    assert "sparkline" in item and len(item["sparkline"]) == 1
+    assert "sparkline" in item and item["sparkline"] == [740.0, 745.0, 750.0, 755.0]
     assert item["open"] == 753.0 and item["high"] == 756.0 and item["low"] == 751.0
     assert item["prev_close"] == 752.70
 
@@ -87,6 +88,7 @@ def test_sources_are_isolated(tmp_path):
     svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3,
                           "timestamp": datetime(2026, 9, 5, 12, 0)})
     svc.cache.set_previous_close("Au99.99", 752.70)
+    svc.set_sge_monthly([740.0, 745.0, 750.0, 755.0])  # 月线就绪时优先于当日采样
     svc.apply_sge({"price": 755.0, "timestamp": datetime(2026, 9, 5, 12, 0),
                    "open": 753.0, "high": 756.0, "low": 751.0})
 

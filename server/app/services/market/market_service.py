@@ -72,6 +72,13 @@ class MarketService:
         self.em_lock = threading.Lock()
         self.gc_lock = threading.Lock()
         self.sge_lock = threading.Lock()
+        # 首页上海黄金卡的行情线：月线（最近 22 个交易日收盘），每小时刷新一次
+        self.sge_monthly: list = []
+        self.sge_monthly_ts: float = 0.0
+
+    def set_sge_monthly(self, points: list) -> None:
+        self.sge_monthly = points
+        self.sge_monthly_ts = time.time()
 
     # ---- 写入（由后台采集器调用） ----
     def apply_index_quotes(self, quotes: dict) -> None:
@@ -156,12 +163,15 @@ class MarketService:
             high=snap.get("high"),
             low=snap.get("low"),
             prev_close=prev_close,
+            # 首页行情线优先展示月线；月线尚未就绪时退回当日累积采样点
+            sparkline=self.sge_monthly if len(self.sge_monthly) >= 2 else self.cache.get_sge_sparkline(),
         )
         if not quote.is_valid():
             logger.warning("drop invalid sge quote: %s", quote.to_dict())
             return
-        self.cache.set_quote("gold_cn", quote.to_dict())
+        # 先存当日采样点（详情页"天"走势用），再写入 quote（行情线字段以月线优先）
         self.cache.append_sge_point(price, ts.strftime("%m-%d %H:%M"))
+        self.cache.set_quote("gold_cn", quote.to_dict())
         self.cache.mark_success("sge")
 
     # ---- stale 标记 ----
