@@ -122,6 +122,10 @@ class MarketService:
             market_status="open",
             is_stale=False,
             sparkline=snap.get("sparkline", []),
+            open=snap.get("open"),
+            high=snap.get("high"),
+            low=snap.get("low"),
+            prev_close=snap.get("prev_settlement"),
         )
         if not quote.is_valid():
             logger.warning("drop invalid gold quote: %s", quote.to_dict())
@@ -129,8 +133,10 @@ class MarketService:
         self.cache.set_quote("gold_global", quote.to_dict())
         self.cache.mark_success("gc")
 
-    def apply_sge(self, price: float, ts: datetime) -> None:
+    def apply_sge(self, snap: dict) -> None:
         """应用 SGE 实时快照；涨跌基准为缓存中的最近交易日收盘价。"""
+        price = snap["price"]
+        ts = snap["timestamp"]
         prev_close = self.cache.get_previous_close("Au99.99")
         change, change_percent = compute_change(price, prev_close)
         quote = MarketQuote(
@@ -146,6 +152,10 @@ class MarketService:
             timestamp=ts.replace(tzinfo=TZ_CN).isoformat(),
             market_status="open" if _sge_open(ts) else "closed",
             is_stale=False,
+            open=snap.get("open"),
+            high=snap.get("high"),
+            low=snap.get("low"),
+            prev_close=prev_close,
         )
         if not quote.is_valid():
             logger.warning("drop invalid sge quote: %s", quote.to_dict())

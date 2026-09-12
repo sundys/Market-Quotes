@@ -152,7 +152,7 @@ async def sge_collector(service: MarketService) -> None:
         service.sge_health.on_request()
         started = time.perf_counter()
         try:
-            quote = await run_fetch_guarded(
+            snap = await run_fetch_guarded(
                 akshare_service.fetch_sge_quote, "Au99.99",
                 timeout=_fetch_timeout(), lock=service.sge_lock,
             )
@@ -172,7 +172,7 @@ async def sge_collector(service: MarketService) -> None:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("sge prev_close fetch failed: %s", exc)
 
-            service.apply_sge(quote.price, quote.timestamp)
+            service.apply_sge(snap)
             service.sge_health.on_success()
             _log_fetch("akshare-sge", "Au99.99", "ok", latency)
             service.cache.save_disk()

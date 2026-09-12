@@ -38,8 +38,8 @@ def _pick_column(df, candidates):
     return None
 
 
-def fetch_sge_quote(symbol: str = "Au99.99") -> SgeQuote:
-    """获取 SGE 实时现价。返回空数据/字段缺失时抛 ValueError。"""
+def fetch_sge_quote(symbol: str = "Au99.99") -> dict:
+    """获取 SGE 实时行情：现价 + 当日开/高/低（来自官网 graph/quotations 原始字段）。"""
     import akshare as ak
 
     df = ak.spot_quotations_sge(symbol=symbol)
@@ -65,8 +65,48 @@ def fetch_sge_quote(symbol: str = "Au99.99") -> SgeQuote:
     ts_raw = None
     if time_col is not None:
         ts_raw = row.iloc[0][time_col]
-    ts = _parse_ts(ts_raw)
-    return SgeQuote(price=price, timestamp=ts)
+    ts = _parse_ts(ts_raw if str(ts_raw or "").strip() else None)
+
+    # 官网原始接口还返回当日 min/max 与分钟价格序列；序列首个有效价近似今开
+    open_, high, low = _fetch_sge_ohlc(symbol, fallback_price=price)
+    return {
+        "price": price,
+        "timestamp": ts,
+        "open": open_,
+        "high": high,
+        "low": low,
+    }
+
+
+def _fetch_sge_ohlc(symbol: str, fallback_price: float) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """SGE 官网当日高/低与开盘（分钟序列首值）；失败返回 None 不影响现价。"""
+    try:
+        import requests
+
+        r = requests.get(
+            "https://www.sge.com.cn/graph/quotations",
+            data={"instid": symbol},
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://www.sge.com.cn/",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            timeout=8,
+        )
+        d = r.json()
+        high = float(d.get("max")) if d.get("max") not in (None, "", 0) else None
+        low = float(d.get("min")) if d.get("min") not in (None, "", 0) else None
+        data = d.get("data") or []
+        open_ = None
+        for v in data:
+            fv = float(v)
+            if fv > 0:
+                open_ = fv
+                break
+        return open_, high, low
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sge ohlc fetch failed: %s", exc)
+        return None, None, None
 
 
 def _parse_ts(ts_raw) -> datetime:
@@ -148,6 +188,9 @@ def fetch_gc_realtime() -> dict:
         "price": price,
         "prev_settlement": float(prev) if prev not in (None, "-", 0) else None,
         "timestamp": ts,
+        "open": float(row["开盘价"]) if row.get("开盘价") not in (None, "-", 0) else None,
+        "high": float(row["最高价"]) if row.get("最高价") not in (None, "-", 0) else None,
+        "low": float(row["最低价"]) if row.get("最低价") not in (None, "-", 0) else None,
     }
 
 
