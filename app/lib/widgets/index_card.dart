@@ -28,9 +28,8 @@ class IndexCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 名称占前两列，价格位于第三列，与下方"涨跌幅/成交量"列对齐
+              // 名称占第一列；价格位于第二列，与下方"昨收/最低"列对齐
               Expanded(
-                flex: 2,
                 child: Text(
                   q?.name ?? fallbackName,
                   style: const TextStyle(
@@ -52,6 +51,7 @@ class IndexCard extends StatelessWidget {
                   ),
                 ),
               ),
+              const Expanded(child: SizedBox()),
             ],
           ),
           const SizedBox(height: 12),
@@ -69,7 +69,7 @@ class IndexCard extends StatelessWidget {
             q != null && (q.changePercent ?? 0) < 0 ? '跌幅' : '涨跌幅',
             formatPercent(q?.changePercent),
             '成交量', formatVolume(q?.volume),
-            valueColor2: changeColor(q?.changePercent),
+            valueColor1: changeColor(q?.changePercent),
           ),
         ],
       ),
@@ -78,7 +78,7 @@ class IndexCard extends StatelessWidget {
 
   /// 两列数据行：标签与数值基线对齐，列宽各半。
   Widget _statRow(String label1, String value1, String label2, String value2,
-      {Color? valueColor2}) {
+      {Color? valueColor1, Color? valueColor2}) {
     Widget cell(String label, String value, {Color? color}) {
       return Expanded(
         child: Row(
@@ -113,7 +113,7 @@ class IndexCard extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        cell(label1, value1),
+        cell(label1, value1, color: valueColor1),
         cell(label2, value2, color: valueColor2),
       ],
     );
