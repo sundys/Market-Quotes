@@ -10,4 +10,4 @@ server/.env
 .DS_Store
 
 # 真机测试截图等临时产物
-device_screenshot*.png
+device_*.png
