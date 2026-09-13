@@ -42,9 +42,11 @@ YF_SYMBOLS = SYMBOLS  # 兼容旧引用
 
 
 def us_market_open(now: Optional[datetime] = None) -> bool:
-    """美股 9:30-16:00 ET，周一至周五（不含节假日，第一阶段简化）。"""
+    """美股 9:30-16:00 ET，周一至周五，扣除美股法定假日（第一阶段不含半日市）。"""
     now = now or datetime.now(TZ_US)
-    if now.weekday() >= 5:
+    from app.services.market.holidays import is_us_holiday
+
+    if now.weekday() >= 5 or is_us_holiday(now.date()):
         return False
     minutes = now.hour * 60 + now.minute
     return 9 * 60 + 30 <= minutes <= 16 * 60

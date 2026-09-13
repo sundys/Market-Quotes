@@ -215,9 +215,11 @@ def fetch_gc_daily_closes(symbol: str = "GC") -> Tuple[List[str], List[float]]:
 
 
 def current_sge_trade_session_open(now: Optional[datetime] = None) -> bool:
-    """SGE 日盘约 09:00-15:30（简化处理，不含夜盘）。"""
+    """SGE 日盘约 09:00-15:30（简化处理，不含夜盘）；法定节假日休市。"""
+    from app.services.market.holidays import is_cn_holiday
+
     now = now or datetime.now()
-    if now.weekday() >= 5:
+    if now.weekday() >= 5 or is_cn_holiday(now.date()):
         return False
     minutes = now.hour * 60 + now.minute
     return 9 * 60 <= minutes <= 15 * 60 + 30

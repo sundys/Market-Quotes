@@ -95,10 +95,16 @@ async def em_collector(service: MarketService) -> None:
 async def gc_collector(service: MarketService) -> None:
     """新浪外盘：COMEX 黄金实时。"""
     while True:
-        # 外盘期货接近全天交易，固定间隔即可；周末降频
+        # 外盘期货接近全天交易，固定间隔即可；周末与美股假日降频
         interval = settings.sge_refresh_interval
-        if datetime.now().weekday() >= 5:
+        now = datetime.now()
+        if now.weekday() >= 5:
             interval = settings.closed_market_interval
+        else:
+            from app.services.market.holidays import is_us_holiday
+
+            if is_us_holiday(now.date()):
+                interval = settings.closed_market_interval
 
         if service.gc_health.in_cooldown():
             remaining = service.gc_health.cooldown_remaining()
