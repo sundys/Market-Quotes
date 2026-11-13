@@ -5,7 +5,9 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import socket
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -25,18 +27,30 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    cache = CacheService(settings.data_dir)
+    # AKShare 内部的 requests 调用没有传 timeout，挂起会永久占住采集线程的锁；
+    # 这里设置进程级默认超时作为兜底（本项目自己的请求都显式带 timeout）。
+    socket.setdefaulttimeout(settings.socket_timeout)
+
+    cache = CacheService(settings.data_dir, min_save_interval=settings.disk_save_min_interval)
     service = MarketService(cache)
     routes.init_router(service)
     tasks = collectors.start_collectors(service)
-    logging.getLogger("market").info("backend started (env=%s, data_dir=%s)", settings.app_env, settings.data_dir)
-    yield
-    for task in tasks:
-        task.cancel()
+    logging.getLogger("market").info(
+        "backend started (env=%s, data_dir=%s, has_cache=%s)",
+        settings.app_env, settings.data_dir, cache.has_any_data(),
+    )
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        # 退出前强制落盘，避免节流窗口内的最后一条行情丢失
+        cache.save_disk(force=True)
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Market Quotes Backend", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Market Quotes Backend", version="0.2.0", lifespan=lifespan)
     # 允许同机调试/局域网真机访问
     app.add_middleware(
         CORSMiddleware,

@@ -38,7 +38,9 @@ _KLINE_HOSTS = [
 # 东财网页端通用 token；部分节点对缺失 ut 的 kline 请求会返回 200+空数据
 _UT = "fa5fd1943c7b386f172d6893dbfba10b"
 
-INDEX_SECIDS = {"nasdaq100": "100.NDX", "sp500": "100.SPX", "dowjones": "100.DJIA"}
+from app.services.market import registry
+
+INDEX_SECIDS = {q.id: q.symbol for q in registry.by_group(registry.GROUP_US_INDEX)}
 GOLD_SECID = "101.GC00Y"  # COMEX 黄金主力连续
 
 

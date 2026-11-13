@@ -52,6 +52,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// 无实时数据时用静态元数据构造占位行情，保证卡片始终可进详情页。
+  /// 与后端 registry.py 的 id 一一对应；新增标的只需这里补一行 + 后端注册表补一行。
   static const Map<String, List<String>> _quoteMeta = {
     'gold_cn': ['上海黄金 Au99.99', 'Au99.99', 'CNY'],
     'gold_global': ['国际黄金期货', 'GC', 'USD'],
@@ -59,6 +60,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     'sp500': ['标普500', '100.SPX', 'USD'],
     'dowjones': ['道琼斯', '100.DJIA', 'USD'],
   };
+
+  /// 首页指数区展示顺序；名称统一取自 _quoteMeta，避免 id 与名称重复定义。
+  static const List<String> _indexIds = ['nasdaq100', 'sp500', 'dowjones'];
 
   void _openDetail(String quoteId) {
     final meta = _quoteMeta[quoteId];
@@ -301,19 +305,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _buildIndexRow() {
     return Column(
       children: [
-        for (final entry in {
-          'nasdaq100': '纳斯达克100',
-          'sp500': '标普500',
-          'dowjones': '道琼斯',
-        }.entries) ...[
+        for (final id in _indexIds) ...[
           GestureDetector(
-            onTap: () => _openDetail(entry.key),
+            onTap: () => _openDetail(id),
             child: IndexCard(
-              quote: _overview?.byId(entry.key),
-              fallbackName: entry.value,
+              quote: _overview?.byId(id),
+              fallbackName: _quoteMeta[id]?[0] ?? '',
             ),
           ),
-          if (entry.key != 'dowjones') const SizedBox(height: 12),
+          if (id != _indexIds.last) const SizedBox(height: 12),
         ],
       ],
     );

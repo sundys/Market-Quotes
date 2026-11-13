@@ -64,6 +64,14 @@ class SourceHealth:
         self.last_error = error[:200]
         self.enter_cooldown(self.backoff_delay())
 
+    def record_error(self, error: str) -> None:
+        """统一入口：429 走限速计数，其它异常走普通失败（两者都退避冷却）。"""
+        text = str(error).lower()
+        if "429" in text or "too many requests" in text or "ratelimit" in text:
+            self.on_rate_limit()
+        else:
+            self.on_failure(error)
+
     def stats(self) -> dict:
         return {
             "total_requests": self.total_requests,

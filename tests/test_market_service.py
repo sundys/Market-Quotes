@@ -1,5 +1,5 @@
 """MarketService 单元测试：涨跌幅计算、stale 标记、数据源隔离（AGENTS.md 第 9/11/12/20 节）。"""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.models.quote import MarketQuote, compute_change
 from app.services.market.cache_service import CacheService
@@ -86,12 +86,13 @@ def test_sge_change_uses_previous_close(tmp_path):
 def test_sources_are_isolated(tmp_path):
     """任一数据源失败不影响其它行情（AGENTS.md 第 20 节）。"""
     svc = make_service(tmp_path)
-    svc.apply_index_quotes({"nasdaq100": index_snap(23000.0, 22900.0)})
-    svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3,
-                          "timestamp": datetime(2026, 9, 5, 12, 0)})
+    now = datetime.now()
+    svc.apply_index_quotes({"nasdaq100": {"name": "x", "price": 23000.0,
+                                          "prev_close": 22900.0, "timestamp": now}})
+    svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3, "timestamp": now})
     svc.cache.set_previous_close("Au99.99", 752.70)
     svc.set_sge_monthly([740.0, 745.0, 750.0, 755.0])  # 月线就绪时优先于当日采样
-    svc.apply_sge({"price": 755.0, "timestamp": datetime(2026, 9, 5, 12, 0),
+    svc.apply_sge({"price": 755.0, "timestamp": now,
                    "open": 753.0, "high": 756.0, "low": 751.0})
 
     svc.mark_em_stale("connection error")
@@ -100,6 +101,73 @@ def test_sources_are_isolated(tmp_path):
     assert by_id["nasdaq100"]["is_stale"] is True
     assert by_id["gold_global"]["is_stale"] is False
     assert by_id["gold_cn"]["is_stale"] is False
+
+
+def test_overview_marks_stale_when_market_open_but_quote_old(tmp_path, monkeypatch):
+    """交易中却长时间没有新数据 → 必须标 stale，不能继续冒充实时（AGENTS.md 第 9/39 节）。"""
+    from app.services.market import market_service as ms
+
+    monkeypatch.setattr(ms, "comex_open", lambda now=None: True)
+    svc = make_service(tmp_path)
+    svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3,
+                          "timestamp": datetime.now() - timedelta(hours=2)})
+
+    item = {i["id"]: i for i in svc.overview()["items"]}["gold_global"]
+    assert item["is_stale"] is True
+
+
+def test_overview_keeps_fresh_quote_not_stale(tmp_path, monkeypatch):
+    from app.services.market import market_service as ms
+
+    monkeypatch.setattr(ms, "comex_open", lambda now=None: True)
+    svc = make_service(tmp_path)
+    svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3,
+                          "timestamp": datetime.now()})
+
+    item = {i["id"]: i for i in svc.overview()["items"]}["gold_global"]
+    assert item["is_stale"] is False
+
+
+def test_partial_index_batch_marks_missing_stale(tmp_path):
+    """部分成功：本轮没返回的标的必须标 stale，否则旧价继续冒充实时。"""
+    svc = make_service(tmp_path)
+    now = datetime.now()
+    svc.apply_index_quotes({"sp500": {"name": "x", "price": 6487.32,
+                                      "prev_close": 6499.77, "timestamp": now}})
+    svc.apply_index_quotes({"nasdaq100": {"name": "x", "price": 23000.0,
+                                          "prev_close": 22900.0, "timestamp": now}})
+
+    assert svc.cache.get_quote("sp500")["is_stale"] is True
+    assert svc.cache.get_quote("nasdaq100")["is_stale"] is False
+
+
+def test_overview_reports_quote_count(tmp_path):
+    svc = make_service(tmp_path)
+    svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3,
+                          "timestamp": datetime.now()})
+    assert svc.overview()["count"] == 1
+
+
+def test_overview_uses_registry_order(tmp_path):
+    svc = make_service(tmp_path)
+    now = datetime.now()
+    svc.apply_sge({"price": 755.0, "timestamp": now, "open": 753.0,
+                   "high": 756.0, "low": 751.0})
+    svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3, "timestamp": now})
+    ids = [i["id"] for i in svc.overview()["items"]]
+    assert ids == ["gold_global", "gold_cn"]
+
+
+def test_refresh_sparkline_backfills_cached_quote(tmp_path):
+    """月线是低频任务，就绪后要立刻补到已缓存行情上，不必等下一轮采集。"""
+    svc = make_service(tmp_path)
+    svc.apply_gold_quote({"price": 4477.2, "prev_settlement": 4520.3,
+                          "timestamp": datetime.now()})
+    assert svc.cache.get_quote("gold_global")["sparkline"] == []
+
+    svc.set_gc_monthly([1.0, 2.0, 3.0])
+    svc.refresh_sparkline("gold_global")
+    assert svc.cache.get_quote("gold_global")["sparkline"] == [1.0, 2.0, 3.0]
 
 
 def test_overview_empty_returns_empty_items(tmp_path):
