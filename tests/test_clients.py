@@ -99,3 +99,48 @@ def test_sina_parse_bad_price_raises():
     bad = 'var hq_str_hf_GC="0,,,,,,,,,,,2026-11-13,x,0";'
     with pytest.raises(ValueError):
         sina_client.parse_payload(bad)
+
+
+SINA_MULTI = (
+    'var hq_str_hf_GC="3893.296,,3894.600,3894.900,3927.200,3879.100,19:07:32,'
+    '3885.300,3883.300,0,1,4,2026-11-13,纽约黄金,0";\n'
+    'var hq_str_hf_XAU="3890.12,3877.430,3890.12,3890.47,3922.99,3874.93,19:07:00,'
+    '3877.43,3877.21,0,0,0,2026-11-13,伦敦金现货黄金";\n'
+)
+
+
+def test_sina_parse_multi_returns_both_symbols():
+    """一次请求同时拿期金与现货。"""
+    quotes = sina_client.parse_multi(SINA_MULTI)
+    assert set(quotes) == {"GC", "XAU"}
+    assert quotes["GC"]["price"] == 3893.296
+    assert quotes["XAU"]["price"] == 3890.12
+    assert quotes["XAU"]["prev_settlement"] == 3877.43
+    assert quotes["XAU"]["high"] == 3922.99
+
+
+def test_sina_parse_multi_skips_broken_line():
+    text = SINA_MULTI + 'var hq_str_hf_SI="";\n'
+    quotes = sina_client.parse_multi(text)
+    assert set(quotes) == {"GC", "XAU"}
+
+
+def test_sina_parse_minline_handles_header_row():
+    """首行 10 列（含日期/交易所），其余 6 列。"""
+    text = (
+        "/*<script>location.href='//sina.com';</script>*/ var _XAU=("
+        '{"minLine_1d":['
+        '["2026-11-13","3877.430","LIFFE","","07:00","3877.270","0","0","3877.630",'
+        '"2026-11-13 07:00:00"],'
+        '["07:01","3878.060","0","0","3877.976","2026-11-13 07:01:00"]]});'
+    )
+    labels, points = sina_client.parse_minline(text)
+    assert labels == ["07:00", "07:01"]
+    assert points == [3877.27, 3878.06]
+
+
+def test_sina_parse_minline_empty_raises():
+    with pytest.raises(ValueError):
+        sina_client.parse_minline('var _XAU=({"minLine_1d":[]});')
+    with pytest.raises(ValueError):
+        sina_client.parse_minline("not a payload")

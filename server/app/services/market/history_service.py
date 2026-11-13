@@ -15,7 +15,7 @@ import math
 import time
 from typing import List, Optional, Tuple
 
-from app.services.market import akshare_service, em_service
+from app.services.market import akshare_service, em_service, sina_client
 
 logger = logging.getLogger("market.history")
 
@@ -113,21 +113,28 @@ class HistoryService:
     def index_history(self, quote_id: str, secid: str, period: str, lock) -> dict:
         return self.em_history(quote_id, secid, period, lock)
 
-    def gc_history(self, period: str, lock) -> dict:
-        """COMEX 黄金：1d 用东财分钟线，其余用新浪日线切片。"""
+    def gc_history(self, period: str, lock, quote_id: str = "gold_global",
+                   symbol: str = "GC") -> dict:
+        """黄金走势：GC 的“天”用东财分钟线，XAU 的“天”用新浪分钟线，其余用新浪日线切片。"""
         if period == "1d":
-            return self.em_history("gold_global", em_service.GOLD_SECID, "1d", lock)
-        cache_key = "GC:daily"
+            if symbol == "GC":
+                result = self.em_history(quote_id, em_service.GOLD_SECID, "1d", lock)
+                if result["points"]:
+                    return result
+                # 东财分钟线不可用时退回新浪分钟线，避免期金“天”走势整块空白
+                logger.info("em intraday unavailable for GC, falling back to sina minline")
+            return self._intraday_history(quote_id, symbol, lock)
+        cache_key = f"{symbol}:daily"
         cached = self._cached_or(cache_key, "1y")
         if cached is not None:
             labels, points = cached
         else:
             if not self._acquire(lock):
-                return self._result("gold_global", period, [], [], stale=True)
+                return self._result(quote_id, period, [], [], stale=True)
             try:
-                labels, points = akshare_service.fetch_gc_daily_closes()
+                labels, points = akshare_service.fetch_gc_daily_closes(symbol)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("gc daily history failed: %s", exc)
+                logger.warning("gc daily history %s failed: %s", symbol, exc)
                 labels, points = [], []
             finally:
                 lock.release()
@@ -138,10 +145,32 @@ class HistoryService:
                 labels, points = zip(*self._gc_daily[1])
                 labels, points = list(labels), list(points)
             else:
-                return self._result("gold_global", period, [], [], stale=True)
-        return self._result("gold_global", period,
+                return self._result(quote_id, period, [], [], stale=True)
+        return self._result(quote_id, period,
                             labels[-_DAILY_SLICE[period]:], points[-_DAILY_SLICE[period]:],
                             stale=False)
+
+    def _intraday_history(self, quote_id: str, symbol: str, lock) -> dict:
+        """新浪外盘当日分钟线（伦敦金现货）。"""
+        cache_key = f"{symbol}:1d"
+        cached = self._cached_or(cache_key, "1d")
+        if cached is not None:
+            return self._result(quote_id, "1d", cached[0], cached[1], stale=False)
+        if not self._acquire(lock):
+            return self._result(quote_id, "1d", [], [], stale=True)
+        try:
+            labels, points = sina_client.fetch_minline(symbol)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("sina minline %s failed: %s", symbol, exc)
+            stale_cache = self._cache.get((cache_key, "1d"))
+            if stale_cache is not None:
+                return self._result(quote_id, "1d", stale_cache[1], stale_cache[2], stale=True)
+            return self._result(quote_id, "1d", [], [], stale=True)
+        finally:
+            lock.release()
+        labels, points = _sanitize_pairs(list(zip(labels, points)))
+        self._store(cache_key, "1d", labels, points)
+        return self._result(quote_id, "1d", labels, points, stale=False)
 
     # ---- SGE ----
     def sge_history(self, period: str, samples: List[Tuple[float, str]], lock) -> dict:

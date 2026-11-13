@@ -18,6 +18,8 @@ class GoldHeroCard extends StatelessWidget {
     switch (q?.symbol) {
       case 'GC':
         return 'COMEX 期金 · \$ / 盎司';
+      case 'XAU':
+        return '伦敦金现货 · \$ / 盎司';
       case 'Au99.99':
         return '上海黄金交易所 · ¥ / 克';
       default:

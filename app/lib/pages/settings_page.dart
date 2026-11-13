@@ -304,8 +304,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 subtitle: '东方财富 · 数据有一定延迟，仅供参考',
               ),
               _InfoTile(
-                title: '国际黄金（COMEX 期金）',
-                subtitle: '新浪财经外盘行情 · 与伦敦现货存在价差',
+                title: '国际黄金（COMEX 期金 / 伦敦金现货）',
+                subtitle: '新浪财经外盘行情 · 期货与现货存在正常价差',
               ),
               _InfoTile(
                 title: '上海黄金 Au99.99',

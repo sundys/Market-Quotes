@@ -136,8 +136,9 @@ def _fetch_sge(service: MarketService) -> dict:
     return snap
 
 
-def _fetch_gc() -> dict:
-    return sina_client.fetch_quote("GC", timeout=settings.fetch_timeout)
+def _fetch_gold() -> dict:
+    """COMEX 期金 + 伦敦金现货：同一主机、一次请求取两个品种。"""
+    return sina_client.fetch_quotes(("GC", "XAU"), timeout=settings.fetch_timeout)
 
 
 def build_specs(service: MarketService) -> List[CollectorSpec]:
@@ -149,9 +150,9 @@ def build_specs(service: MarketService) -> List[CollectorSpec]:
             interval=_index_interval,
         ),
         CollectorSpec(
-            name="sina-gc", group=registry.GROUP_COMEX, source_key="gc",
+            name="sina-gold", group=registry.GROUP_COMEX, source_key="gc",
             lock=service.gc_lock, health=service.gc_health,
-            fetch=_fetch_gc, apply=service.apply_gold_quote,
+            fetch=_fetch_gold, apply=service.apply_gold_quotes,
             interval=_comex_interval,
         ),
         CollectorSpec(
@@ -220,51 +221,56 @@ async def run_collector(service: MarketService, spec: CollectorSpec) -> None:
         await asyncio.sleep(max(0.0, _jittered(spec.interval()) - elapsed))
 
 
-async def _refresh_gc_monthly(service: MarketService) -> str:
-    """首页国际黄金期货卡行情线：优先东财 COMEX 日线，失败退回新浪外盘日线。"""
+async def _refresh_gold_monthly(service: MarketService, code: str, quote_id: str) -> str:
+    """首页黄金卡行情线：GC 优先东财 COMEX 日线（失败退回新浪），XAU 用新浪日线。"""
     closes = []
-    try:
-        _, closes = await run_fetch_guarded(
-            lambda: em_service.fetch_kline(em_service.GOLD_SECID, 101, 22),
-            timeout=min(float(settings.fetch_timeout), 20.0),
-            lock=service.kline_lock,
-        )
-    except FetchBusy:
-        logger.info("gc monthly refresh skipped: kline busy")
-        return "busy"
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("gc monthly (em kline) failed: %s, falling back to sina daily", exc)
-
-    if not closes:
+    if code == "GC":
         try:
             _, closes = await run_fetch_guarded(
-                akshare_service.fetch_gc_daily_closes,
+                lambda: em_service.fetch_kline(em_service.GOLD_SECID, 101, 22),
                 timeout=min(float(settings.fetch_timeout), 20.0),
                 lock=service.kline_lock,
             )
         except FetchBusy:
-            logger.info("gc monthly fallback skipped: kline busy")
+            logger.info("%s monthly refresh skipped: kline busy", quote_id)
             return "busy"
         except Exception as exc:  # noqa: BLE001
-            logger.warning("gc monthly fallback failed: %s", exc)
+            logger.warning("%s monthly (em kline) failed: %s, falling back to sina daily",
+                           quote_id, exc)
+
+    if not closes:
+        try:
+            _, closes = await run_fetch_guarded(
+                lambda: akshare_service.fetch_gc_daily_closes(code),
+                timeout=min(float(settings.fetch_timeout), 20.0),
+                lock=service.kline_lock,
+            )
+        except FetchBusy:
+            logger.info("%s monthly fallback skipped: kline busy", quote_id)
+            return "busy"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("%s monthly fallback failed: %s", quote_id, exc)
             return "fail"
 
     if not closes:
         return "fail"
-    service.set_gc_monthly([float(c) for c in closes[-22:]])
-    service.refresh_sparkline("gold_global")
-    logger.info("gc monthly sparkline refreshed (%d pts)", len(closes[-22:]))
+    service.set_monthly(quote_id, [float(c) for c in closes[-22:]])
+    service.refresh_sparkline(quote_id)
+    logger.info("%s monthly sparkline refreshed (%d pts)", quote_id, len(closes[-22:]))
     return "ok"
 
 
-async def gc_monthly_refresher(service: MarketService) -> None:
+async def gold_monthly_refresher(service: MarketService) -> None:
+    """期金与现货共用一条低频循环。"""
     while True:
-        status = await _refresh_gc_monthly(service)
-        if status == "ok":
+        statuses = [await _refresh_gold_monthly(service, code, quote_id)
+                    for code, quote_id in (("GC", "gold_global"), ("XAU", "gold_spot"))]
+        if all(s == "ok" for s in statuses):
             await asyncio.sleep(_jittered(settings.sparkline_refresh_interval))
+        elif "busy" in statuses:
+            await asyncio.sleep(15.0)
         else:
-            # 只是撞上锁就很快重试；真的抓取失败才退到 2 分钟，避免打爆数据源
-            await asyncio.sleep(15.0 if status == "busy" else 120.0)
+            await asyncio.sleep(120.0)
 
 
 async def _refresh_sge_monthly(service: MarketService) -> str:
@@ -304,7 +310,7 @@ def start_collectors(service: MarketService) -> list[asyncio.Task]:
         return [asyncio.create_task(_forced_fail_loop(service))]
 
     tasks = [asyncio.create_task(run_collector(service, spec)) for spec in build_specs(service)]
-    tasks.append(asyncio.create_task(gc_monthly_refresher(service)))
+    tasks.append(asyncio.create_task(gold_monthly_refresher(service)))
     tasks.append(asyncio.create_task(sge_monthly_refresher(service)))
     return tasks
 

@@ -69,7 +69,7 @@ def test_gc_history_slices_daily_with_labels(monkeypatch):
     labels = [f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}" for i in range(200)]
     closes = [float(i + 1) for i in range(200)]
     monkeypatch.setattr(akshare_service, "fetch_gc_daily_closes",
-                        lambda: (labels, closes))
+                        lambda symbol="GC": (labels, closes))
 
     r_week = hs.gc_history("1w", threading.Lock())
     assert r_week["points"] == closes[-5:]
@@ -134,6 +134,52 @@ def test_sge_intraday_uses_accumulated_samples():
     r = hs.sge_history("1d", samples, threading.Lock())
     assert r["points"] == [958.0, 959.2]
     assert r["labels"] == ["09-05 10:00", "09-05 10:05"]
+
+
+def test_gc_intraday_falls_back_to_sina(monkeypatch):
+    """东财分钟线不可用时，期金“天”走势退回新浪分钟线。"""
+    from app.services.market import sina_client
+
+    hs = HistoryService()
+
+    def boom(secid, klt, lmt):
+        raise RuntimeError("connection aborted")
+
+    monkeypatch.setattr(em_service, "fetch_kline", boom)
+    monkeypatch.setattr(sina_client, "fetch_minline",
+                        lambda code="GC": (["10:00", "10:01"], [3890.1, 3891.2]))
+    r = hs.gc_history("1d", threading.Lock())
+    assert r["id"] == "gold_global"
+    assert r["points"] == [3890.1, 3891.2]
+    assert r["is_stale"] is False
+
+
+def test_spot_intraday_uses_sina_minline(monkeypatch):
+    from app.services.market import sina_client
+
+    hs = HistoryService()
+    monkeypatch.setattr(sina_client, "fetch_minline",
+                        lambda code="XAU": (["09:00", "09:01"], [3877.2, 3878.0]))
+    r = hs.gc_history("1d", threading.Lock(), quote_id="gold_spot", symbol="XAU")
+    assert r["id"] == "gold_spot"
+    assert r["labels"] == ["09:00", "09:01"]
+    assert r["points"] == [3877.2, 3878.0]
+    assert r["is_stale"] is False
+
+
+def test_spot_daily_slices_with_labels(monkeypatch):
+    from app.services.market import akshare_service
+
+    hs = HistoryService()
+    labels = [f"d{i}" for i in range(200)]
+    closes = [float(i + 1) for i in range(200)]
+    monkeypatch.setattr(akshare_service, "fetch_gc_daily_closes",
+                        lambda symbol="GC": (labels, closes))
+
+    r = hs.gc_history("1m", threading.Lock(), quote_id="gold_spot", symbol="XAU")
+    assert r["id"] == "gold_spot"
+    assert r["points"] == closes[-22:]
+    assert r["labels"] == labels[-22:]
 
 
 def test_history_route_validates_period(client):

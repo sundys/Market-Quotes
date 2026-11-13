@@ -56,10 +56,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const Map<String, List<String>> _quoteMeta = {
     'gold_cn': ['上海黄金 Au99.99', 'Au99.99', 'CNY'],
     'gold_global': ['国际黄金期货', 'GC', 'USD'],
+    'gold_spot': ['伦敦金现货', 'XAU', 'USD'],
     'nasdaq100': ['纳斯达克100', '100.NDX', 'USD'],
     'sp500': ['标普500', '100.SPX', 'USD'],
     'dowjones': ['道琼斯', '100.DJIA', 'USD'],
   };
+
+  /// 黄金主卡轮播顺序：中国黄金 → 国际期金 → 伦敦金现货。
+  static const List<String> _heroIds = ['gold_cn', 'gold_global', 'gold_spot'];
 
   /// 首页指数区展示顺序；名称统一取自 _quoteMeta，避免 id 与名称重复定义。
   static const List<String> _indexIds = ['nasdaq100', 'sp500', 'dowjones'];
@@ -166,28 +170,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 )
               else ...[
-                // 黄金双卡：默认中国黄金，左滑切换国际黄金；点击进详情
+                // 黄金三卡：默认中国黄金，左右滑动切换国际期金/伦敦金现货；点击进详情
                 SizedBox(
                   height: 216,
                   child: PageView(
                     controller: _heroController,
                     onPageChanged: (page) => setState(() => _heroPage = page),
                     children: [
-                      GestureDetector(
-                        onTap: () => _openDetail('gold_cn'),
-                        child: GoldHeroCard(quote: _overview?.byId('gold_cn')),
-                      ),
-                      GestureDetector(
-                        onTap: () => _openDetail('gold_global'),
-                        child: GoldHeroCard(quote: _overview?.byId('gold_global')),
-                      ),
+                      for (final id in _heroIds)
+                        GestureDetector(
+                          onTap: () => _openDetail(id),
+                          child: GoldHeroCard(quote: _overview?.byId(id)),
+                        ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(2, (i) {
+                  children: List.generate(_heroIds.length, (i) {
                     final active = i == _heroPage;
                     return Container(
                       width: active ? 16 : 6,

@@ -31,6 +31,8 @@ class QuoteDef:
 _QUOTES = (
     QuoteDef("gold_global", "国际黄金期货", "GC", "USD", "oz",
              "AKShare/新浪外盘(期金)", GROUP_COMEX),
+    QuoteDef("gold_spot", "伦敦金现货", "XAU", "USD", "oz",
+             "AKShare/新浪外盘(现货)", GROUP_COMEX),
     QuoteDef("nasdaq100", "纳斯达克100", "100.NDX", "USD", None,
              "AKShare/东财", GROUP_US_INDEX),
     QuoteDef("sp500", "标普500", "100.SPX", "USD", None,

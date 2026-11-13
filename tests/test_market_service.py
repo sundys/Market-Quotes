@@ -170,6 +170,51 @@ def test_refresh_sparkline_backfills_cached_quote(tmp_path):
     assert svc.cache.get_quote("gold_global")["sparkline"] == [1.0, 2.0, 3.0]
 
 
+def test_gold_batch_applies_futures_and_spot(tmp_path):
+    """一次请求同时应用期金与现货；两者涨跌各自按昨结算计算。"""
+    svc = make_service(tmp_path)
+    now = datetime.now()
+    svc.apply_gold_quotes({
+        "GC": {"price": 3893.3, "prev_settlement": 3885.3, "timestamp": now,
+               "open": 3883.3, "high": 3927.2, "low": 3879.1},
+        "XAU": {"price": 3890.1, "prev_settlement": 3877.4, "timestamp": now,
+                "open": 3877.2, "high": 3923.0, "low": 3874.9},
+    })
+
+    gc = svc.cache.get_quote("gold_global")
+    spot = svc.cache.get_quote("gold_spot")
+    assert gc["name"] == "国际黄金期货" and "期金" in gc["source"]
+    assert spot["name"] == "伦敦金现货" and "现货" in spot["source"]
+    assert abs(spot["change"] - (3890.1 - 3877.4)) < 1e-9
+    assert spot["currency"] == "USD" and spot["unit"] == "oz"
+
+
+def test_gold_batch_marks_missing_symbol_stale(tmp_path):
+    svc = make_service(tmp_path)
+    now = datetime.now()
+    svc.apply_gold_quotes({
+        "GC": {"price": 3893.3, "prev_settlement": 3885.3, "timestamp": now},
+        "XAU": {"price": 3890.1, "prev_settlement": 3877.4, "timestamp": now},
+    })
+    # 本轮只回了 GC，现货必须标 stale
+    svc.apply_gold_quotes({"GC": {"price": 3894.0, "prev_settlement": 3885.3,
+                                  "timestamp": now}})
+    assert svc.cache.get_quote("gold_spot")["is_stale"] is True
+    assert svc.cache.get_quote("gold_global")["is_stale"] is False
+
+
+def test_spot_uses_own_monthly_sparkline(tmp_path):
+    svc = make_service(tmp_path)
+    svc.set_monthly("gold_spot", [1.0, 2.0, 3.0])
+    svc.set_monthly("gold_global", [9.0, 8.0])
+    svc.apply_gold_quotes({
+        "GC": {"price": 3893.3, "prev_settlement": 3885.3, "timestamp": datetime.now()},
+        "XAU": {"price": 3890.1, "prev_settlement": 3877.4, "timestamp": datetime.now()},
+    })
+    assert svc.cache.get_quote("gold_spot")["sparkline"] == [1.0, 2.0, 3.0]
+    assert svc.cache.get_quote("gold_global")["sparkline"] == [9.0, 8.0]
+
+
 def test_overview_empty_returns_empty_items(tmp_path):
     svc = make_service(tmp_path)
     overview = svc.overview()

@@ -102,22 +102,28 @@ class MarketService:
         self.gc_lock = threading.Lock()
         self.sge_lock = threading.Lock()
         self.latencies: Dict[str, Optional[int]] = {"em": None, "gc": None, "sge": None}
-        # 首页行情线：月线（最近 22 个交易日收盘），由低频任务刷新
-        self.sge_monthly: list = []
-        self.gc_monthly: list = []
+        # 首页行情线：月线（最近 22 个交易日收盘），按 quote_id 保存，由低频任务刷新
+        self.monthly: Dict[str, list] = {}
 
+    def set_monthly(self, quote_id: str, points: list) -> None:
+        self.monthly[quote_id] = list(points)
+
+    def monthly_for(self, quote_id: str) -> list:
+        return self.monthly.get(quote_id) or []
+
+    # 兼容旧调用
     def set_sge_monthly(self, points: list) -> None:
-        self.sge_monthly = points
+        self.set_monthly("gold_cn", points)
 
     def set_gc_monthly(self, points: list) -> None:
-        self.gc_monthly = points
+        self.set_monthly("gold_global", points)
 
     def record_latency(self, source: str, latency_ms: int) -> None:
         self.latencies[source] = latency_ms
 
     def refresh_sparkline(self, quote_id: str) -> None:
         """月线就绪后立刻补到已缓存的行情上，不必等下一次实时采集。"""
-        points = self.gc_monthly if quote_id == "gold_global" else self.sge_monthly
+        points = self.monthly_for(quote_id)
         if len(points) < 2:
             return
         payload = self.cache.get_quote(quote_id)
@@ -164,10 +170,21 @@ class MarketService:
             self.cache.set_quote(defn.id, quote.to_dict())
         self.cache.mark_success("em")
 
+    def apply_gold_quotes(self, snaps: dict) -> None:
+        """应用新浪外盘快照：{code: snapshot}，一次请求同时覆盖期金与现货。"""
+        for defn in registry.by_group(registry.GROUP_COMEX):
+            snap = snaps.get(defn.symbol)
+            if snap is None:
+                self._mark_one_stale(defn.id)
+                continue
+            self._apply_gold(defn, snap)
+        self.cache.mark_success("gc")
+
     def apply_gold_quote(self, snap: dict) -> None:
-        """应用 COMEX 黄金期货实时快照（名称与来源明确标注期货）。"""
-        defn = registry.get("gold_global")
-        assert defn is not None
+        """单品种入口（兼容旧调用/测试），默认按 COMEX 期金处理。"""
+        self.apply_gold_quotes({"GC": snap})
+
+    def _apply_gold(self, defn: registry.QuoteDef, snap: dict) -> None:
         change, change_percent = compute_change(snap["price"], snap.get("prev_settlement"))
         quote = MarketQuote(
             id=defn.id,
@@ -182,17 +199,16 @@ class MarketService:
             timestamp=snap["timestamp"].replace(tzinfo=TZ_CN).isoformat(),
             market_status="open" if comex_open() else "closed",
             is_stale=False,
-            sparkline=self.gc_monthly if len(self.gc_monthly) >= 2 else snap.get("sparkline", []),
+            sparkline=self.monthly_for(defn.id) or snap.get("sparkline", []),
             open=snap.get("open"),
             high=snap.get("high"),
             low=snap.get("low"),
             prev_close=snap.get("prev_settlement"),
         )
         if not quote.is_valid():
-            logger.warning("drop invalid gold quote: %s", quote.to_dict())
+            logger.warning("drop invalid gold quote %s: %s", defn.id, quote.to_dict())
             return
         self.cache.set_quote(defn.id, quote.to_dict())
-        self.cache.mark_success("gc")
 
     def apply_sge(self, snap: dict) -> None:
         """应用 SGE 实时快照；涨跌基准为缓存中持久化的最近交易日收盘价。"""
@@ -203,8 +219,9 @@ class MarketService:
         prev_close = self.cache.get_previous_close(defn.symbol)
         change, change_percent = compute_change(price, prev_close)
         # 行情线优先级：月线 > 数据源当日分钟线 > 采集器累积采样
-        if len(self.sge_monthly) >= 2:
-            sparkline = self.sge_monthly
+        monthly = self.monthly_for(defn.id)
+        if len(monthly) >= 2:
+            sparkline = monthly
         else:
             sparkline = snap.get("sparkline") or self.cache.get_sge_sparkline()
         quote = MarketQuote(
@@ -272,7 +289,8 @@ class MarketService:
         if defn.group == registry.GROUP_SGE:
             return history_service.sge_history(period, self.cache.get_sge_samples(), self.sge_lock)
         if defn.group == registry.GROUP_COMEX:
-            return history_service.gc_history(period, self.kline_lock)
+            return history_service.gc_history(period, self.kline_lock,
+                                              quote_id=quote_id, symbol=defn.symbol)
         return history_service.index_history(quote_id, defn.symbol, period, self.kline_lock)
 
     # ---- 读取（API 路由调用，只返回缓存） ----

@@ -108,6 +108,22 @@ def test_sge_prev_close_refreshes_once_per_day(tmp_path):
     assert collectors._apply_sge_daily(svc, daily) is False
 
 
+def test_fetch_gold_uses_one_request_for_both_symbols(monkeypatch):
+    """期金与现货必须合并成一次请求（同一主机、同一响应）。"""
+    from app.services.market import sina_client
+
+    seen = {}
+
+    def fake(codes, timeout=None):
+        seen["codes"] = tuple(codes)
+        return {"GC": {"price": 3893.3}, "XAU": {"price": 3890.1}}
+
+    monkeypatch.setattr(sina_client, "fetch_quotes", fake)
+    out = collectors._fetch_gold()
+    assert seen["codes"] == ("GC", "XAU")
+    assert set(out) == {"GC", "XAU"}
+
+
 def test_sge_daily_refresh_only_needed_on_new_day(tmp_path):
     svc = make_service(tmp_path)
     assert collectors._needs_daily_refresh(svc) is True
@@ -167,4 +183,4 @@ def test_sge_monthly_sparkline_updated_from_daily(tmp_path):
     collectors._apply_sge_daily(
         svc, SgeDaily(trade_date=date(2026, 11, 12), prev_close=1.0,
                       labels=[str(i) for i in range(30)], closes=closes))
-    assert svc.sge_monthly == closes[-22:]
+    assert svc.monthly_for("gold_cn") == closes[-22:]

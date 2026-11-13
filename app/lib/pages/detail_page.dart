@@ -208,7 +208,8 @@ class _DetailPageState extends State<DetailPage> {
 
   bool _isIndex(MarketQuote q) => q.symbol.startsWith('100.');
 
-  bool _isGold(MarketQuote q) => q.symbol == 'GC' || q.symbol == 'Au99.99';
+  bool _isGold(MarketQuote q) =>
+      q.symbol == 'GC' || q.symbol == 'XAU' || q.symbol == 'Au99.99';
 
   String _prevLabel(MarketQuote q) => q.symbol == 'GC' ? '昨结' : '昨收';
 
