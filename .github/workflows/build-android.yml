@@ -104,12 +104,31 @@ jobs:
           path: app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           if-no-files-found: error
 
-      # 推送 v* tag 时：创建 GitHub Release，正文取 tag 摘要，并附上两个 APK
+      # 推送 v* tag 时：创建 GitHub Release，正文取 tag 注释（中文更新摘要），并附上两个 APK
+      #
+      # 注意：actions/checkout 可能把标签按 commit 取回（本地变成轻量标签），
+      # 此时 `git tag -l --format='%(contents)'` 只能拿到提交信息，
+      # 所以这里直接向 GitHub API 读取 tag 对象；没有注释的轻量标签回退到提交信息。
       - name: Extract release notes from tag
         if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | \
-            sed '/^-----BEGIN PGP SIGNATURE-----$/,$d' > release_notes.md
+          ref_json=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" 2>/dev/null || echo '{}')
+          obj_type=$(printf '%s' "$ref_json" | jq -r '.object.type // ""')
+          tag_sha=$(printf '%s' "$ref_json" | jq -r '.object.sha // ""')
+
+          notes=""
+          if [ "$obj_type" = "tag" ] && [ -n "$tag_sha" ]; then
+            notes=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_sha}" --jq '.message' 2>/dev/null || true)
+          fi
+
+          if [ -z "$notes" ]; then
+            echo "::warning::tag ${GITHUB_REF_NAME} 没有注释，改用提交信息作为 Release 正文"
+            notes=$(git log -1 --pretty=%B)
+          fi
+
+          printf '%s\n' "$notes" | sed '/^-----BEGIN PGP SIGNATURE-----$/,$d' > release_notes.md
           cat release_notes.md
 
       - name: Publish GitHub Release
